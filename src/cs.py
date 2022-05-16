@@ -6,25 +6,32 @@ import time
 import matplotlib.ticker as mticker
 import cv2
 import matplotlib.cm as cm
-from sklearn.linear_model import Lasso
+from sklearn.linear_model import Lasso, LassoCV
 import pywt
 from scipy.stats import ortho_group
 import scipy
+from scipy import pi
 from scipy.linalg import hadamard
 import math
 from scipy.stats import ortho_group
 import pickle
 from sklearn.decomposition import PCA
 import scipy.signal as signal
+from sklearn.linear_model import OrthogonalMatchingPursuit
+from sklearn.linear_model import OrthogonalMatchingPursuitCV
+from pyDRMetrics.pyDRMetrics import *
+
 from plotComponents2D import *
+
 
 import warnings
 warnings.filterwarnings("ignore")
 
 #region Performance Test. Compare NNRW with mainstream classifier models.
 
-PSI_NAMES = ['Identity Matrix', 'DCT', 'DFT', 'DWT', 
-'Hadamard-Walsh Matrix', 'Random Orthogonal Matrix']
+PSI_NAMES = ['IDM', 'DCT', 'DFT', 'DWT', 'HWT', 'ROM']
+PSI_LONGNAMES = ['Identity Matrix', 'Discrete Cosine Transform', 'Discrete Fourier Transform', 
+'Discrete Wavelet Transform', 'Hadamard-Walsh Matrix', 'Random Orthogonal Matrix']
 
 def dctmtx(m, n, display = True):    
     '''
@@ -229,7 +236,7 @@ def Mutual_Coherence(A,B):
                 
     return math.sqrt(n)*p
 
-def Analyze_PSIs(x, PSIs):
+def Analyze_Sparsity (x, PSIs):
     '''
     Parameters
     ----------
@@ -237,8 +244,8 @@ def Analyze_PSIs(x, PSIs):
     PSIs : a dict of PSI matrices
     '''
 
-    x = x.reshape((-1,1))
-    print(x.shape)
+    # x = x.reshape((-1,1))
+    # print("reshape x to ", x.shape)
 
     plt.figure(figsize=(24,48))
     rows = len(PSIs)
@@ -249,17 +256,17 @@ def Analyze_PSIs(x, PSIs):
         PSI = PSIs[key]        
         xx = np.copy(x)
         
-        # pad x with zero if necessary
-        if (x.shape[1] < PSI.shape[0]):
-            xx = np.zeros((x.shape[0], PSI.shape[0]))
-            xx[:x.shape[0],:x.shape[1]] = x        
+        # pad x with zero if necessary, e.g., the HWT case
+        if (len(x) < PSI.shape[0]):
+            xx = np.zeros(PSI.shape[0])
+            xx[:len(x)] = x        
         
         PSI_H = PSI.conj().T
         PSI_INV = np.linalg.pinv(PSI)
         #print(PSI_H)
         #print(PSI_INV)
         # theoretically, PSI_H == PSI_INV
-        z = (xx @ PSI_H).ravel().tolist()
+        z = PSI @ xx
         # print(z)
         MAX = abs(max(z, key=abs))
         # print(MAX)
@@ -278,7 +285,10 @@ def Analyze_PSIs(x, PSIs):
         
         plt.subplot(rows,2,2*idx+1)
         plt.plot(z, color='gray')
-        plt.title(key)
+        title = key
+        if key in PSI_NAMES:
+            title = PSI_LONGNAMES[ PSI_NAMES.index(key) ] + ' (' + key + ')'
+        plt.title( title )
         # plt.axis('off')
         
         plt.subplot(rows,2,2*idx+2)
@@ -286,11 +296,10 @@ def Analyze_PSIs(x, PSIs):
         plt.title('AUC = ' + str(round(auc,3)) + ', $r_{0.02max}$ = ' + str(round(r,3)))
         pylab.xlim([0,0.02])
         pylab.ylim([0,1.0])
-        plt.xticks(np.arange(0.0, 0.021, 0.005))    
+        plt.xticks(np.arange(0.0, 0.021, 0.005))
 
     plt.show()    
     matplotlib.rcParams.update({'font.size': 12})
-
 
 def GetSensingMatrix(n, k = 0.2):
 
@@ -336,12 +345,14 @@ def Sensing(x, k = 0.2):
 
 from scipy.sparse import csr_matrix
 def MeasurementMatrix (N, r, t = 'DCT'): 
+
     '''
-    Construct the measurement matrix.
+    Construct the measurement matrix. 
+    Currently only support DCT and DFT.
     '''
     
     kn = len(r)    
-    a = np.zeros((1, N))    
+    a = np.zeros(N)    
         
     # Suppose the first number in the permutation is 42. Then choose the 42th
     # elements in a matrix full of zeros and change it to 1. Apply a discrete
@@ -349,15 +360,17 @@ def MeasurementMatrix (N, r, t = 'DCT'):
     # Adelta as a new row.
     # A = np.zeros((kn, N))
 
-    A = csr_matrix((kn, N)) #, dtype='float16') # reduce memory use. numpy uses float64 as default dtype.
+    A = np.zeros ((kn, N)) #csr_matrix, dtype='float16') # reduce memory use. numpy uses float64 as default dtype.
 
     for i, j in enumerate(r):
-        a[0,j] = 1
-        if t == 'DFT':
-            A[i, :] = cv2.dft(a) # .astype(np.float16)
-        elif t == 'DFT':
-            A[i, :] = cv2.dct(a) # .astype(np.float16)
-        a[0,j] = 0
+        a[j] = 1
+        if t == 'IDM' or t == 0:
+            A[i] = a # .astype(np.float16)
+        elif t == 'DCT' or t == 1:
+            A[i] = cv2.dct(a).flatten() # .astype(np.float16)
+        elif t == 'DFT' or t == 2:
+            A[i] = cv2.dft(a).flatten() # .astype(np.float16)
+        a[j] = 0
     
     ###### ALTERNATIVE IMPLEMENTATION ######
     # phi = np.zeros((k, N)) # Sampling matrix, kxN    
@@ -366,50 +379,88 @@ def MeasurementMatrix (N, r, t = 'DCT'):
     # psi = dctmtx(N,N) # memory costly
     # A = phi*psi
     
-    return A
+    return A # .toarray()
 
-def Recovery (A, y, alpha = 0.01, t = 'DCT', fast_lasso = False, display = True):
-    '''
+def Recovery (A, xs, t = 'DCT', PSI = None, solver = 'LASSO', fast_lasso = False, display = True):
+    '''    
     Solve the optimization problem A@z = y
     
     Parameters
     ----------
     A : measurement matrix
     y : = xs, sampled signal
-    alpha : controls LASSO sparsity. Bigger alpha will return sparser result.
-    t : dct or dft
+    alpha[obselete] : controls LASSO sparsity. Bigger alpha will return sparser result.
+                      Now we use LassoCV. This param is no longer needed.
+    t : IDM, DCT, DFT, etc.
+    solver : 'LASSO' or 'OMP'
     '''
 
-    # 实测并未发现两种模式的运行时间差异
-    if fast_lasso:
-        lasso = Lasso(alpha = alpha, selection = 'random', tol = 0.001) # ‘random’ often leads to significantly faster convergence especially when tol is higher than 1e-4.
-    else:
-        lasso = Lasso(alpha = alpha, selection = 'cyclic')
+    if solver == 'LASSO':
 
-    lasso.fit(A,y)
+        alphas = None # automatic set alphas
+        if  t == PSI_NAMES[5] or t == PSI_LONGNAMES[5] or t == 'rom' or \
+            t == 'DWT' or t == 'dwt' or \
+            t == 'LDA' or t == 'lda':
+            alphas = [0.001, 0.00001] # set empirical alpha values. LDA needs smaller alpha
+
+        # 实测并未发现两种模式的运行时间差异
+        if fast_lasso:
+            lasso = LassoCV(alphas = alphas, selection = 'random', tol = 0.001) # ‘random’ often leads to significantly faster convergence especially when tol is higher than 1e-4.
+        else:
+            lasso = LassoCV(alphas = alphas, selection = 'cyclic')
+
+        lasso.fit(A, xs)
+        z = lasso.coef_
+
+    else: # 'OMP'
+
+        # plot the noise-free reconstruction
+        omp = OrthogonalMatchingPursuit() # n_nonzero_coefs default 10%.
+        omp.fit(A, xs)
+        z = omp.coef_
+        # print('OMP score:', omp.score(A, xs)) # Return the coefficient of determination R^2 of the prediction.
+    
+    if t == PSI_NAMES[0] or t == PSI_LONGNAMES[0] or t == 'idm':
+        z = np.linalg.pinv(A) @ xs
+        xr = z
+    elif  t == PSI_NAMES[1] or t == PSI_LONGNAMES[1] or t == 'dct':
+        xr = cv2.idct(z)
+    elif t == PSI_NAMES[2] or t == PSI_LONGNAMES[2] or t == 'dft':
+        xr = cv2.idft(z)
+    elif t == PSI_NAMES[3] or t == PSI_LONGNAMES[3] or t == 'dwt' or \
+        t == PSI_NAMES[4] or t == PSI_LONGNAMES[4] or t == 'hwt' or \
+        t == PSI_NAMES[5] or t == PSI_LONGNAMES[5] or t == 'rom' or \
+        t == 'EBP' or t == 'ebp' or t == 'LDA' or t == 'lda': # these are adaptive bases
+        xr = (PSI @ z).T
+    else:
+        print ('unsupported transform type: ', t)
+        return
 
     if display:
-        print ('non-zero coef: ', np.count_nonzero(lasso.coef_))
-        print ('sparsity: ', 1 - np.count_nonzero(lasso.coef_) / len(lasso.coef_) )
-        biggest_lasso_fs = (np.argsort(np.abs(lasso.coef_))[-200:-1])[::-1] # take last N item indices and reverse (ord desc)
-        plt.plot(np.abs(lasso.coef_))
+
+        plt.figure(figsize = (10,3))
+        print ('non-zero coef: ', np.count_nonzero(z))
+        print ('sparsity: ', 1 - np.count_nonzero(z) / len(z) )
+        biggest_lasso_fs = (np.argsort(np.abs(z))[-200:-1])[::-1] # take last N item indices and reverse (ord desc)
+        plt.plot(np.abs(z))
         plt.title('abs (z)')
         plt.show()
 
-    z = lasso.coef_
-
-    if t == 'DCT':
-        xr = cv2.idct(z)
-    else: # dft
-        xr = cv2.idft(z)
+        plt.figure(figsize = (10,3))
+        plt.plot(xr)
+        plt.title('Reconstructed Signal (xr)')
+        plt.show()
 
     return z, xr
 
-def Sensing_n_Recovery(x, k = 0.2, alpha = 0.01, t = 1, fast_lasso = False):
+def Sensing_n_Recovery(x, k = 0.2, t = 'DCT', solver = 'LASSO', fast_lasso = False):
     
-    if (t > 2):
-        print('Current Version only supports DCT and DFT. Exiting...')
-        return
+    '''
+    Parameters
+    ----------
+    k : sampling ratio/percentage. 
+        In normal cases (k<1), Az = xs has more unknowns than equations. For the extreme case of k = 1, CS sampling is degraded to a random shuffling. The linear system 'Az = xs' will have equal unknowns and equations, and there is only one solution. The reconstructed xr will be identical to the original x.
+    '''
 
     VECTORIZATION = False    
     if VECTORIZATION:
@@ -421,15 +472,30 @@ def Sensing_n_Recovery(x, k = 0.2, alpha = 0.01, t = 1, fast_lasso = False):
         A = PHI @ PSI
         
     else:
+
         # imgdata, w, h = get_img_data('symmetry.jpg')
         xs, r = Sensing(x, k)
         A = MeasurementMatrix (len(x), r, t = t)
 
-    z,xr = Recovery (A, xs, alpha = alpha, t = t, fast_lasso=fast_lasso, display = False)
+    z,xr = Recovery (A, xs, t = t, solver = solver, fast_lasso=fast_lasso, display = False)
+
+
+    matplotlib.rcParams.update({'font.size': 20})
+    fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(32,6))
+    ax[0].plot(z, color = 'gray')
+    ax[0].set_title('recovered latent representation (z)')
+
+    ax[1].plot(xr, color = 'gray')
+    ax[1].set_title('reconstructed signal (xr)')
+
+    fig.tight_layout()
+    plt.show()
+
+    matplotlib.rcParams.update({'font.size': 12})
 
     return z, xr
 
-def Dataset_Sensing_n_Recovery (X, y = None, k = 0.2, alpha = 0.01, t = 1, fast_lasso = False):
+def Dataset_Sensing_n_Recovery (X, y = None, k = 0.2, t = 'DCT', solver = 'LASSO', fast_lasso = False):
     
     print('===== k =', k, ', L1 =', alpha,' ======')
 
@@ -442,7 +508,7 @@ def Dataset_Sensing_n_Recovery (X, y = None, k = 0.2, alpha = 0.01, t = 1, fast_
     else:
         for i in range(X.shape[0]):
             x = X[i] # X[i,:].ravel().tolist()[0] # get the i-th sample
-            xr, z = Sensing_n_Recovery(x, k, alpha, t)
+            xr, z = Sensing_n_Recovery(x, k, t, solver = solver)
             Z[i,:] = list(z)
             Xr[i,:]= xr #[:,0]
     
@@ -507,6 +573,161 @@ def Dataset_Sensing_n_Recovery (X, y = None, k = 0.2, alpha = 0.01, t = 1, fast_
     plt.show()
     
     return scores.mean(), str(r.results['y']['stat']['Pr > F'])
+
+
+def GridSearch_Sensing_n_Recovery(x, PSIs, ks = [0.1, 0.2, 0.5, 1.001], solver = 'LASSO'):
+
+    plt.figure(figsize=(40, len(PSIs)*5))
+    rows = len(PSIs) + 1
+    matplotlib.rcParams.update({'font.size': 24})    
+    COLS = 2 + len(ks)
+    RMSES = []
+
+    for idx, key in enumerate(PSIs):     
+
+        PSI = PSIs[key]
+        
+        # padded version
+        xe = np.copy(x)
+        
+        # pad x with zero if necessary
+        if (len(x) < len(PSI)): # the HWT case
+            xe = np.zeros(len(PSI))
+            xe[:len(x)] = x     
+        if len(xe) % 2 == 1:
+            xe = xe[:-1] # xe = np.append(xe, 0) # make even length, as required by some transform, e.g., DCT
+            PSI = PSI[:-1,:-1] # align with xe
+        
+        psi_name = key
+        
+        PSI_H = PSI.conj().T
+        PSI_INV = np.linalg.pinv(PSI)    
+        assert np.allclose(PSI_H, PSI_INV) # Unitary Matrix
+        
+        #print(PSI_H)
+        #print(PSI_INV)
+        # theoretically, PSI_H == PSI_INV
+        z = PSI @ xe
+        # print((xx @ PSI_H).shape)
+        # print("z =", z[:10])
+        MAX = np.max(np.abs(z)) # abs(max(z, key=abs))
+        thresholds = np.array(range(100)) / 50000
+        
+        rs =[]
+        for threshold in thresholds:
+            rs.append((np.abs(np.array(z)) <= threshold * MAX).sum() / len(z))
+            
+        auc = 0
+        for i in range(1000):
+            auc += (np.abs(np.array(z)) <= (i+1)/1000 * MAX).sum() / len(z)        
+        auc = auc/1000
+        
+        r = (np.abs(np.array(z)) <= 0.001 * MAX).sum() / len(z)  #   # use 0.001 MAX ABS as threshold # sys.float_info.epsilon
+        
+        
+        ########## plot ###########
+    
+        plt.subplot(rows,COLS,COLS*idx+1)    
+        #if key == 'EBP':      
+        #    ebp_dim = np.linalg.matrix_rank(X[1:,:]) 
+        #    plt.title('\n'+psi_name + ' basis')
+        #    plt.imshow(PSI[:ebp_dim, :ebp_dim], interpolation='nearest', cmap=cm.Greys_r) # Q2
+        if PSI.dtype == 'complex': # DFT
+            plt.title('\n'+psi_name + ' basis(phase)')
+            plt.imshow(np.angle(PSI), interpolation='nearest', cmap=cm.Greys_r)
+        else:
+            plt.title('\n'+psi_name + ' basis')
+            plt.imshow(PSI, interpolation='nearest', cmap=cm.Greys_r)
+        plt.axis('off')
+            
+        plt.subplot(rows,COLS,COLS*idx+2)
+        plt.plot(z, color='gray')
+        if idx == 0:
+            plt.title('z (latent space)') # '\n'+psi_name + 
+        if psi_name == 'EBP':
+            pylab.ylim([-abs(max(z,key=abs)), abs(max(z,key=abs))])
+        plt.xticks([])
+        plt.yticks([])
+        # plt.axis('off')
+        
+        rmses = []
+        
+        for kidx, k in enumerate(ks):
+        
+            ########## sensing #############
+
+            # either works fine
+            if True:
+                PHI, OMEGA = GetSensingMatrix(len(xe), k)            
+                xs = PHI @ xe
+                pidx = np.argmax(PHI, axis = 1)
+            else:
+                xs, pidx = Sensing(xe, k)
+                PHI = np.zeros((len(pidx), len(xe)))
+                for i,j in enumerate(pidx):
+                    PHI[i, j] = 1
+
+            ####### reconstruction ##########
+            
+            A = MeasurementMatrix(len(xe), pidx, psi_name)
+            W = None
+            if (psi_name == 'HWT' or psi_name == 'DWT' or psi_name == 'ROM' or \
+                psi_name == 'EBP' or psi_name == 'LDA'):
+                W = PSI
+                A = PHI @ W  
+
+            else:
+                A = MeasurementMatrix(len(xe), pidx, psi_name)
+                W = None
+
+            z, xr = Recovery (A, xs, psi_name, display = False, PSI = W, solver = solver) # lower k needs bigger L1. k 0.1 - L1 0.1, k 0.01, L1 - 10
+            
+            _, _, rmse = calculate_recon_error(xe.reshape(1, -1), xr.reshape(1, -1)) #(np.matrix(xe), np.matrix(xr))        
+            rmses.append(rmse)
+            
+            plt.subplot(rows,COLS,COLS*idx+2+1+kidx)
+            plt.plot(xr[:len(x)], label = 'RMSE ' + str( round(rmse, 3) ), color='gray') # cut the first n points, as in HWT, xr is padded.
+            if idx == 0:
+                plt.title('$x_r$ ($k$=' + str(round(k, 2)) + ', $n_s$=' + str(len(xs)) + ')')
+            plt.xticks([])
+            plt.yticks([])
+            # plt.legend()
+            
+        RMSES.append(rmses)
+        
+        #plt.subplot(rows,3,3*idx+3)
+        #plt.scatter(thresholds, rs, color='gray')
+        #plt.title('\nAUC = ' + str(round(auc,3)) + ', s = ' + str(round(r,3))) # $s_{2\%}$ 
+        #pylab.xlim([0,0.002])
+        #pylab.ylim([0,1.0])
+        #plt.xticks(np.arange(0.0, 0.0021, 0.0005))
+        
+        #plt.subplots_adjust(top=1., left=0., right=1., bottom=0.)
+
+    matplotlib.rcParams.update({'font.size': 12})
+
+    DynamicProperty(RMSES, PSIs, np.round(ks,2))
+    return RMSES
+
+def DynamicProperty(RMSES, PSIs, ks, repeat = 1):
+
+    assert (len(RMSES) == len(PSIs))
+    matplotlib.rcParams.update({'font.size': 16})
+    
+    for i, key in enumerate(PSIs):   
+            
+        plt.figure(figsize=(8,6))
+        
+        plt.scatter(ks, RMSES[i], c='gray', s = 70, label = key)
+        plt.plot(ks, RMSES[i], c='gray')
+        plt.xlabel('k')
+        plt.ylabel('RMSE')
+        
+        plt.legend()
+        plt.show()
+
+    matplotlib.rcParams.update({'font.size': 12})
+
 
 def Simulate_ECG(bpm = 60, time_length = 10, display = True):
 
@@ -621,12 +842,20 @@ def dft_lossy_signal_compression(x, percent = 99):
 
     return lossy_idft
 
+def Frequency_Analysis(x):
+
+    fourier = np.fft.fft(x)
+    n = len(x)
+    FFT = abs(fourier)
+    freq = np.fft.fftfreq(n, d=1) # d - Sample spacing (inverse of the sampling rate). Defaults to 1.
+    plt.plot(freq, FFT)
+
 ############ Below are image-related functions ##############
 
 
 def get_img_data(path):
 
-    img = cv2.imread(path, cv2.IMREAD_GRAYSCALE).astype('float') # input a square image
+    img = cv2.imread(path, cv2.IMREAD_GRAYSCALE) # input a square image
     w,h = img.shape
     return img.reshape(w*h), w, h # expand to 1D array
 
@@ -786,6 +1015,7 @@ def img_dwt(path, wavelet = 'db3', flavor = 1):
     # imgdata = img.reshape(1, w*h) # expand to 1D array
 
     if (flavor == 1):
+
         img_dwt = pywt.dwt2(img, wavelet)
         img_idwt = pywt.idwt2(img_dwt, wavelet)
 
@@ -825,11 +1055,10 @@ def img_dwt(path, wavelet = 'db3', flavor = 1):
 
     else:
 
-        mtx = dwtmtx(w, wavelet, False)
+        mtx, _ = dwtmtx(w, wavelet, False)
         mtx_h = mtx.conj().T #np.linalg.pinv(mtx)
         img_dwt = mtx_h @ img #pywt.dwt2(img, 'db3')
         img_idwt = mtx @ img_dwt #pywt.idwt2(img_dwt, 'db3')
-
 
         plt.figure(figsize=(9,3))
 
@@ -948,7 +1177,9 @@ def Image_Sensing_n_Recovery(path, k = 0.2, alpha = 0.01, t = 'DCT', fast_lasso 
     ax.set_title('original image')
 
     ax = fig.add_subplot(132)
-    if t == 'DCT':
+    if t == 'IDM':
+        dst = x.reshape((w,h))
+    elif t == 'DCT':
         dst = cv2.dct(x.reshape((w,h)))
     else:
         dst = cv2.dft(x.reshape((w,h)))
