@@ -32,6 +32,7 @@ warnings.filterwarnings("ignore")
 PSI_NAMES = ['IDM', 'DCT', 'DFT', 'DWT', 'HWT', 'ROM']
 PSI_LONGNAMES = ['Identity Matrix', 'Discrete Cosine Transform', 'Discrete Fourier Transform', 
 'Discrete Wavelet Transform', 'Hadamard-Walsh Matrix', 'Random Orthogonal Matrix']
+PSI_MC = ['$\sqrt{n}$', '$\sqrt{2}$', '1', 'around 0.8 $\sqrt{n}$', '1', '$\sqrt{2 log(n)}$']
 
 def dctmtx(m, n, display = True):    
     '''
@@ -138,10 +139,30 @@ def dwtmtx(N, wavelet = 'db3', display = True):
         plt.imshow(mtx, interpolation='nearest', cmap=cm.Greys_r)
         plt.title(wavelet + " Wavelet Matrix (" + str(N) + " , " + str(N) + ")")
         plt.axis('off')
-        plt.show()
-    
-    print('det(DWT_MTX) = ', round(scipy.linalg.det(mtx), 5))    
+        plt.show()    
+        print('det(DWT_MTX) = ', round(scipy.linalg.det(mtx), 5))   
+
     return mtx, N
+
+def DwtMcCurve():
+
+    Ns = [10, 20, 50, 100, 150, 200, 500, 1000, 2000] # dimensions
+    mcs = []
+    for N in Ns:
+        
+        _, OMEGA = GetSensingMatrix(N)
+        psi, _ = dwtmtx(N, display = False)
+        mc = Mutual_Coherence(psi, OMEGA)
+        # print("N :", N, ".  : ", mc)
+        mcs.append(mc)
+
+    plt.plot(Ns, mcs)
+    plt.title(r'Mutual Coherence (DWT, OMEGA)')
+    plt.show()
+
+    plt.plot(Ns, np.sqrt(Ns) * .8)
+    plt.title(r'0.8 $\sqrt{n}$')
+    plt.show()
 
 def rvsmtx(N, display = True):
 
@@ -236,6 +257,95 @@ def Mutual_Coherence(A,B):
                 
     return math.sqrt(n)*p
 
+def Sparsity(x, flavor = 'gini'):
+    '''
+    There lacks a concensus on the sparsity measure.
+    This function provides two flaovrs: Lp-norm(0<=p<1) and the Gini index as such a measure.
+    
+    Parameter
+    ---------
+    x : input data, 1d array
+    flavor : 'L0_inverse' is (1 - L0 Norm / N). This flavor is sensative to noises.
+             'gini_v1' and 'gini_v2' will return very close results.
+    '''
+
+    if flavor == 'L0_inverse':
+
+        return (len(x) - np.linalg.norm(x, 0))/len(x)
+
+    elif flavor == 'gini_v1' or flavor == 'gini':
+
+        # (Warning: This is a concise implementation, but it is O(n**2)
+        # in time and memory, where n = len(x).  *Don't* pass in huge samples!)
+
+        # Mean absolute difference
+        mad = np.abs(np.subtract.outer(x, x)).mean()
+        # Relative mean absolute difference
+        rmad = mad/np.mean(x)
+        # Gini coefficient
+        g = 0.5 * rmad
+        return g
+
+    elif flavor == 'gini_v2':
+        
+        # Calculate the Gini coefficient of a numpy array. 
+        # based on bottom eq:
+        # http://www.statsdirect.com/help/generatedimages/equations/equation154.svg
+        # from:
+        # http://www.statsdirect.com/help/default.htm#nonparametric_methods/gini.htm
+        # All values are treated equally, arrays must be 1d
+        array = np.array(x, dtype = 'float16').flatten()
+        if np.amin(array) < 0:
+            # Values cannot be negative:
+            array -= np.amin(array)
+        # Values cannot be 0:
+        array += 0.0000001
+        # Values must be sorted:
+        array = np.sort(array)
+        # Index per array element:
+        index = np.arange(1,array.shape[0]+1)
+        # Number of array elements:
+        n = array.shape[0]
+        # Gini coefficient:
+        return ((np.sum((2 * index - n  - 1) * array)) / (n * np.sum(array)))
+    
+def CompareSparsityFlavors():
+
+    s1 = []
+    s2 = []
+    s3 = []
+
+    for i in range(100):
+        v =  [0]*i + [1]*(100-i) 
+        s1.append(Sparsity (v, flavor = 'L0_inverse'))
+        s2.append(Sparsity (v, flavor = 'gini_v1'))
+        s3.append(Sparsity (v, flavor = 'gini_v2'))
+
+
+    matplotlib.rcParams.update({'font.size': 20})
+
+    fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(24,7))
+
+    fig.suptitle("Calculate sparsity measures on a 100-element array. \nThe zero elements are increased from 0 to 100%")
+
+    ax[0].plot(s1, color = 'gray')
+    ax[0].set_ylabel('L0 reverse')
+    ax[0].set_xlabel('zero percentage')
+
+    ax[1].plot(s2, color = 'gray')
+    ax[1].set_ylabel('GINI v1')
+    ax[1].set_xlabel('zero percentage')
+
+    ax[2].plot(s3, color = 'gray')
+    ax[2].set_ylabel('GINI v2')
+    ax[2].set_xlabel('zero percentage')
+
+    fig.tight_layout()
+    plt.show()
+
+    matplotlib.rcParams.update({'font.size': 12})
+
+
 def Analyze_Sparsity (x, PSIs):
     '''
     Parameters
@@ -287,13 +397,14 @@ def Analyze_Sparsity (x, PSIs):
         plt.plot(z, color='gray')
         title = key
         if key in PSI_NAMES:
-            title = PSI_LONGNAMES[ PSI_NAMES.index(key) ] + ' (' + key + ')'
+            psi_idx = PSI_NAMES.index(key)
+            title = PSI_LONGNAMES[ psi_idx ] + ' (' + key + '), MC = ' + PSI_MC[ psi_idx ]
         plt.title( title )
         # plt.axis('off')
         
         plt.subplot(rows,2,2*idx+2)
         plt.scatter(thresholds, rs, color='gray')
-        plt.title('AUC = ' + str(round(auc,3)) + ', $r_{0.02max}$ = ' + str(round(r,3)))
+        plt.title('AUC = ' + str(round(auc,3)) + ', $r_{0.02max}$ = ' + str(round(r,3)) + ', gini = ' + str(round(Sparsity(z),3)))
         pylab.xlim([0,0.02])
         pylab.ylim([0,1.0])
         plt.xticks(np.arange(0.0, 0.021, 0.005))
@@ -301,14 +412,17 @@ def Analyze_Sparsity (x, PSIs):
     plt.show()    
     matplotlib.rcParams.update({'font.size': 12})
 
-def GetSensingMatrix(n, k = 0.2):
+def GetSensingMatrix(n, k = 0.2, s = None):
 
     '''
     Parameters
     ----------
     n : signal dimensions
     k : sampling ratio
+    s : random seed. Specify a seed value for TVSM senarios.
     '''
+    if s is not None:
+        np.random.seed(s)
     
     OMEGA = np.zeros((n,n))
     pm = np.random.permutation(np.arange(0, n))
@@ -399,9 +513,10 @@ def Recovery (A, xs, t = 'DCT', PSI = None, solver = 'LASSO', fast_lasso = False
 
         alphas = None # automatic set alphas
         if  t == PSI_NAMES[5] or t == PSI_LONGNAMES[5] or t == 'rom' or \
+            t == 'DFT' or t == 'dft' or \
             t == 'DWT' or t == 'dwt' or \
             t == 'LDA' or t == 'lda':
-            alphas = [0.001, 0.00001] # set empirical alpha values. LDA needs smaller alpha
+            alphas = [0.0001, 0.00001] # set empirical alpha values. LDA needs smaller alpha
 
         # 实测并未发现两种模式的运行时间差异
         if fast_lasso:
@@ -439,8 +554,8 @@ def Recovery (A, xs, t = 'DCT', PSI = None, solver = 'LASSO', fast_lasso = False
     if display:
 
         plt.figure(figsize = (10,3))
-        print ('non-zero coef: ', np.count_nonzero(z))
-        print ('sparsity: ', 1 - np.count_nonzero(z) / len(z) )
+        # print ('non-zero coef: ', np.count_nonzero(z))
+        # print ('sparsity: ', 1 - np.count_nonzero(z) / len(z) )
         biggest_lasso_fs = (np.argsort(np.abs(z))[-200:-1])[::-1] # take last N item indices and reverse (ord desc)
         plt.plot(np.abs(z))
         plt.title('abs (z)')
@@ -453,7 +568,7 @@ def Recovery (A, xs, t = 'DCT', PSI = None, solver = 'LASSO', fast_lasso = False
 
     return z, xr
 
-def Sensing_n_Recovery(x, k = 0.2, t = 'DCT', solver = 'LASSO', fast_lasso = False):
+def Sensing_n_Recovery(x, k = 0.2, t = 'DCT', solver = 'LASSO', fast_lasso = False, display = True):
     
     '''
     Parameters
@@ -479,40 +594,57 @@ def Sensing_n_Recovery(x, k = 0.2, t = 'DCT', solver = 'LASSO', fast_lasso = Fal
 
     z,xr = Recovery (A, xs, t = t, solver = solver, fast_lasso=fast_lasso, display = False)
 
+    if display: 
 
-    matplotlib.rcParams.update({'font.size': 20})
-    fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(32,6))
-    ax[0].plot(z, color = 'gray')
-    ax[0].set_title('recovered latent representation (z)')
+        matplotlib.rcParams.update({'font.size': 20})
+        fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(32,6))
+        ax[0].plot(z, color = 'gray')
+        ax[0].set_title('recovered latent representation (z)')
 
-    ax[1].plot(xr, color = 'gray')
-    ax[1].set_title('reconstructed signal (xr)')
+        ax[1].plot(xr, color = 'gray')
+        ax[1].set_title('reconstructed signal (xr)')
 
-    fig.tight_layout()
-    plt.show()
+        fig.tight_layout()
+        plt.show()
 
-    matplotlib.rcParams.update({'font.size': 12})
+        matplotlib.rcParams.update({'font.size': 12})
 
     return z, xr
 
-def Dataset_Sensing_n_Recovery (X, y = None, k = 0.2, t = 'DCT', solver = 'LASSO', fast_lasso = False):
+def Dataset_Sensing_n_Recovery (X, y = None, k = 0.2, t = 'DCT', solver = 'LASSO', fast_lasso = False, display = 'all'):
     
-    print('===== k =', k, ', L1 =', alpha,' ======')
+    '''
+    display : 'all' - display all samples
+              'first' - display only the first sample
+              'none' - don't display
+    '''
+
+    print('\n\n===== Ψ = '  + t + ', k =' + str(round(k,2)) + ' ======\n')
 
     Z = np.zeros(X.shape)
     Xr = np.zeros(X.shape)
+
+    if display == 'all':
+        b = True
+    elif display == 'none':
+        b = False
     
     if (k > 1.0): # when k > 1.0, return original signal directly
         Xr = X 
         Z = X
     else:
-        for i in range(X.shape[0]):
+        for i in range(X.shape[0]):            
             x = X[i] # X[i,:].ravel().tolist()[0] # get the i-th sample
-            xr, z = Sensing_n_Recovery(x, k, t, solver = solver)
+
+            if display == 'first':
+                b = (i == 0)
+
+            if b:
+                print('Sample ' + str(i+1))
+
+            xr, z = Sensing_n_Recovery(x, k, t, solver = solver, display = b)
             Z[i,:] = list(z)
             Xr[i,:]= xr #[:,0]
-    
-    fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(20,4))
 
     pca = PCA(n_components=2) # keep the first 2 components
     Z_pca = pca.fit_transform(Z)
@@ -521,58 +653,71 @@ def Dataset_Sensing_n_Recovery (X, y = None, k = 0.2, t = 'DCT', solver = 'LASSO
 
     pca = PCA(n_components=2) # keep the first 2 components
     Xr_pca = pca.fit_transform(Xr)
-    plotComponents2D(Xr_pca, y = y, use_markers = False, ax=ax[0])    
-    ax[0].title.set_text('2D Visualization')
     
-    Xc1s = []
-    Xc2s = []
-    title = ''
-    for c in set(y): 
-        # print(Xr.shape, Z.shape, Xr_pca.shape, Z_pca.shape, y.shape)
-        Xc = Xr_pca[y == c]
-        yc = y[y == c]
-        Xc1s.append(list(np.asarray(Xc[:,0]).reshape(1,-1)[0])) # First PC of Class c
-        Xc2s.append(list(np.asarray(Xc[:,1]).reshape(1,-1)[0])) # Second PC of Class c
+    # For classification problem, continue to analyze with ANOVA and MANOVA
+    if y is None:
 
-    #### ANOVA ####
+        plt.scatter(Xr_pca[:,0], Xr_pca[:,1], s=40, 
+        edgecolors = 'black', alpha = .4)
+        plt.title('2D Visualization')
+        plt.show()
 
-    ax[1].title.set_text('PC1')
-    ax[1].boxplot(Xc1s, notch=False) # plot 1st PC of all classes
-    f,p= scipy.stats.f_oneway(Xc1s[0], Xc1s[1]) # equal to ttest_ind() in case of 2 groups
-    print("f={},p={}".format(f,p))
-    # dict_anova_p1[idx] = p
-    
-    ax[2].title.set_text('PC2')
-    ax[2].boxplot(Xc2s, notch=False)
-    f,p= scipy.stats.f_oneway(Xc2s[0], Xc2s[1])
-    print("f={},p={}".format(f,p))
-    
-    #### MANOVA ####
+    else:
+        fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(20,4))
+        plotComponents2D(Xr_pca, y = y, use_markers = False, ax=ax[0]) 
+        ax[0].title.set_text('2D Visualization')
 
-    import statsmodels
-    from statsmodels.base.model import Model
-    from statsmodels.multivariate.manova import MANOVA
-    import pandas as pd
+        Xc1s = []
+        Xc2s = []
+        title = ''
+        for c in set(y): 
+            # print(Xr.shape, Z.shape, Xr_pca.shape, Z_pca.shape, y.shape)
+            Xc = Xr_pca[y == c]
+            yc = y[y == c]
+            Xc1s.append(list(np.asarray(Xc[:,0]).reshape(1,-1)[0])) # First PC of Class c
+            Xc2s.append(list(np.asarray(Xc[:,1]).reshape(1,-1)[0])) # Second PC of Class c
 
-    df = pd.DataFrame({'PC1':Xr_pca[:,0],'PC2':Xr_pca[:,1],'y':y})
+        #### ANOVA ####
 
-    mv = MANOVA.from_formula('PC1 + PC2 ~ y', data=df) # Intercept is included by default.
-    print(mv.endog_names)
-    print(mv.exog_names)
-    r = mv.mv_test()
-    print(r)
-    #dict_manova_p[idx] = str(r.results['y']['stat']['Pr > F'])
+        ax[1].title.set_text('PC1')
+        ax[1].boxplot(Xc1s, notch=False) # plot 1st PC of all classes
+        f,p= scipy.stats.f_oneway(Xc1s[0], Xc1s[1]) # equal to ttest_ind() in case of 2 groups
+        print("f={},p={}".format(f,p))
+        # dict_anova_p1[idx] = p
+        
+        ax[2].title.set_text('PC2')
+        ax[2].boxplot(Xc2s, notch=False)
+        f,p= scipy.stats.f_oneway(Xc2s[0], Xc2s[1])
+        print("f={},p={}".format(f,p))
+        
+        #### MANOVA ####
+
+        import statsmodels
+        from statsmodels.base.model import Model
+        from statsmodels.multivariate.manova import MANOVA
+        import pandas as pd
+
+        df = pd.DataFrame({'PC1':Xr_pca[:,0],'PC2':Xr_pca[:,1],'y':y})
+
+        mv = MANOVA.from_formula('PC1 + PC2 ~ y', data=df) # Intercept is included by default.
+        print(mv.endog_names)
+        print(mv.exog_names)
+        r = mv.mv_test()
+        print(r)
+        #dict_manova_p[idx] = str(r.results['y']['stat']['Pr > F'])
+        
+        #### Classifier ACC
+        from sklearn.model_selection import cross_val_score
+        from sklearn import svm
+        
+        clf = svm.SVC(kernel='linear', C=1)
+        scores = cross_val_score(clf, Xr, y, cv=4)
+        print('SVC ACC: ', scores.mean())      
+        plt.show()
     
-    #### Classifier ACC
-    from sklearn.model_selection import cross_val_score
-    from sklearn import svm
+        # return scores.mean(), str(r.results['y']['stat']['Pr > F'])
     
-    clf = svm.SVC(kernel='linear', C=1)
-    scores = cross_val_score(clf, Xr, y, cv=4)
-    print('SVC ACC: ', scores.mean())      
-    plt.show()
-    
-    return scores.mean(), str(r.results['y']['stat']['Pr > F'])
+    return Z, Xr
 
 
 def GridSearch_Sensing_n_Recovery(x, PSIs, ks = [0.1, 0.2, 0.5, 1.001], solver = 'LASSO'):
@@ -706,6 +851,7 @@ def GridSearch_Sensing_n_Recovery(x, PSIs, ks = [0.1, 0.2, 0.5, 1.001], solver =
 
     matplotlib.rcParams.update({'font.size': 12})
 
+    print('\n-------------\nThe following are dynamic properties of each PSI:')
     DynamicProperty(RMSES, PSIs, np.round(ks,2))
     return RMSES
 
@@ -849,6 +995,30 @@ def Frequency_Analysis(x):
     FFT = abs(fourier)
     freq = np.fft.fftfreq(n, d=1) # d - Sample spacing (inverse of the sampling rate). Defaults to 1.
     plt.plot(freq, FFT)
+
+
+############ Below are TVSM functions ##############
+
+import time
+
+def Time2Seed(t = None):
+
+    '''
+    Parameter
+    ---------
+    t : a timestamp. If unspecified, will use "now".
+
+    Return
+    ------
+    Seconds since epoch. Unix and POSIX measure time as the number of seconds that have passed since 1 January 1970 00:00:00 UT, a point in time known as the Unix epoch. The NT time epoch on Windows NT and later refers to the Windows NT system time in (10^-7)s intervals from 0h 1 January 1601.
+    '''
+    
+    if t is None:
+        t = time.time()
+    return int(round(t)) # Return the current time in seconds since the Epoch.
+
+def Seed2Time(s):
+    return time.ctime(s)
 
 ############ Below are image-related functions ##############
 

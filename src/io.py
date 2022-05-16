@@ -83,10 +83,12 @@ def Draw_Class_Average (X, y, X_names):
 def PeekDataset(path,  delimiter = ',', has_y = True):
 
     X, y, X_names = LoadDataset(path, delimiter=delimiter, has_y = True)
-    ScatterPlot(X, y)
+    
     if y is None:
         Draw_Average (X, X_names)
     else:
         Draw_Class_Average (X, y, X_names)
 
+    ScatterPlot(X, y)
+    
     return X, y, X_names
