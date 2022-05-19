@@ -8,7 +8,7 @@ Compressed Sensing library for 1D Spectroscopic Profiling
 
 # A simple startup
     
-    from cs1 import cs, adaptive
+    from cs1.cs import *
 
     # Generate common non-adaptive bases and save to a local pickle file.
     # The generation process can be very slow, so save it for future use.
@@ -51,6 +51,10 @@ Compressed Sensing library for 1D Spectroscopic Profiling
     dft_lossy_image_compression()
 
 
+# adaptive cs bases
 
-
+    from cs1.adaptive import *
+    
+    PSI, _ = EBP(X) # X is a m-by-n training dataset. PSI is the EBP basis
+    PSI, _, _ = LDA(X, y, display = True) # X and y are training dataset. PSI is the LDA basis.
 

@@ -1,8 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from numpy.linalg import inv, pinv, svd, norm
-# from plotComponents2D import *
-from cs import *
+
+from .cs import *
 
 def LDA(X, y, display = True):
     '''
@@ -35,7 +35,7 @@ def LDA(X, y, display = True):
         
     if display:
 
-        fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(9,3))
+        fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(18,6))
         ax[0].imshow(within_class_scatter_matrix, cmap = 'gray')
         ax[0].axis('off')
         ax[0].set_title('within-class scatter matrix (Sw)')

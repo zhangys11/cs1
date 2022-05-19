@@ -22,7 +22,7 @@ from sklearn.linear_model import OrthogonalMatchingPursuit
 from sklearn.linear_model import OrthogonalMatchingPursuitCV
 from pyDRMetrics.pyDRMetrics import *
 
-from plotComponents2D import *
+from .plotComponents2D import *
 
 
 import warnings

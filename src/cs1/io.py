@@ -6,7 +6,8 @@ import matplotlib.cm as cm
 import pylab, matplotlib
 from sklearn.linear_model import Lasso
 from sklearn.decomposition import PCA
-from plotComponents2D import *
+
+from .plotComponents2D import *
 
 def LoadDataset(path, delimiter = ',', has_y = True):
     '''

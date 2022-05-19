@@ -2,6 +2,11 @@ LICENCE
 README.md
 pyproject.toml
 setup.cfg
+src/cs1/__init__.py
+src/cs1/adaptive.py
+src/cs1/cs.py
+src/cs1/io.py
+src/cs1/plotComponents2D.py
 src/cs1.egg-info/PKG-INFO
 src/cs1.egg-info/SOURCES.txt
 src/cs1.egg-info/dependency_links.txt
