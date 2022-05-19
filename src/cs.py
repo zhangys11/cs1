@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import pylab, matplotlib
 import numpy as np
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from tqdm import tqdm
 import time
 import matplotlib.ticker as mticker
@@ -506,6 +507,7 @@ def Recovery (A, xs, t = 'DCT', PSI = None, solver = 'LASSO', fast_lasso = False
     alpha[obselete] : controls LASSO sparsity. Bigger alpha will return sparser result.
                       Now we use LassoCV. This param is no longer needed.
     t : IDM, DCT, DFT, etc.
+    PSI : For adpative transforms, users need to pass in the PSI basis. For non-adaptive ones, leave as none.
     solver : 'LASSO' or 'OMP'
     '''
 
@@ -597,6 +599,7 @@ def Sensing_n_Recovery(x, k = 0.2, t = 'DCT', solver = 'LASSO', fast_lasso = Fal
     if display: 
 
         matplotlib.rcParams.update({'font.size': 20})
+
         fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(32,6))
         ax[0].plot(z, color = 'gray')
         ax[0].set_title('recovered latent representation (z)')
@@ -646,12 +649,12 @@ def Dataset_Sensing_n_Recovery (X, y = None, k = 0.2, t = 'DCT', solver = 'LASSO
             Z[i,:] = list(z)
             Xr[i,:]= xr #[:,0]
 
-    pca = PCA(n_components=2) # keep the first 2 components
+    pca = PCA(n_components=None) # n_components == min(n_samples, n_features) - 1. But we will use the first 2 components
     Z_pca = pca.fit_transform(Z)
     # plotComponents2D(Z_pca, y, labels, use_markers = False, ax=ax[0])
     # ax[0].title.set_text('2D-Visualization')
 
-    pca = PCA(n_components=2) # keep the first 2 components
+    pca = PCA(n_components=None)
     Xr_pca = pca.fit_transform(Xr)
     
     # For classification problem, continue to analyze with ANOVA and MANOVA
@@ -663,9 +666,17 @@ def Dataset_Sensing_n_Recovery (X, y = None, k = 0.2, t = 'DCT', solver = 'LASSO
         plt.show()
 
     else:
-        fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(20,4))
-        plotComponents2D(Xr_pca, y = y, use_markers = False, ax=ax[0]) 
-        ax[0].title.set_text('2D Visualization')
+
+        fig, ax = plt.subplots(nrows=1, ncols=4, figsize=(24,4))
+
+        pca = PCA(n_components=None)
+        X_pca = pca.fit_transform(X)
+
+        plotComponents2D(X_pca, y = y, use_markers = False, ax=ax[0]) 
+        ax[0].title.set_text('PCA Visualization (X)')
+
+        plotComponents2D(Xr_pca, y = y, use_markers = False, ax=ax[1]) 
+        ax[1].title.set_text('PCA Visualization (Xr)')
 
         Xc1s = []
         Xc2s = []
@@ -679,14 +690,14 @@ def Dataset_Sensing_n_Recovery (X, y = None, k = 0.2, t = 'DCT', solver = 'LASSO
 
         #### ANOVA ####
 
-        ax[1].title.set_text('PC1')
-        ax[1].boxplot(Xc1s, notch=False) # plot 1st PC of all classes
+        ax[2].title.set_text('PC1')
+        ax[2].boxplot(Xc1s, notch=False) # plot 1st PC of all classes
         f,p= scipy.stats.f_oneway(Xc1s[0], Xc1s[1]) # equal to ttest_ind() in case of 2 groups
         print("f={},p={}".format(f,p))
         # dict_anova_p1[idx] = p
         
-        ax[2].title.set_text('PC2')
-        ax[2].boxplot(Xc2s, notch=False)
+        ax[3].title.set_text('PC2')
+        ax[3].boxplot(Xc2s, notch=False)
         f,p= scipy.stats.f_oneway(Xc2s[0], Xc2s[1])
         print("f={},p={}".format(f,p))
         
@@ -716,9 +727,62 @@ def Dataset_Sensing_n_Recovery (X, y = None, k = 0.2, t = 'DCT', solver = 'LASSO
         plt.show()
     
         # return scores.mean(), str(r.results['y']['stat']['Pr > F'])
+
+        #### Mutlivariate KLD
+
+        n_comp = 2
+        print('\n ------ Class-wise Multivarate KLD on ' + str(n_comp) + ' PCA components -----')
+        
+        dists = []
+        
+        for XPCA in [ X_pca[:,:n_comp], Xr_pca[:,:n_comp] ]:
+
+            dist = {}
+
+            for c in set(y):    
+                Xc = XPCA[y == c]
+                yc = y[y == c]
+                
+                # np.cov()
+                # ddof=1 will return the unbiased estimate, even if both fweights and aweights are specified, and ddof=0 will return the simple average. 
+                # There is exactly 1 difference between np.cov(X) and np.cov(X, ddof=0) which is the bias step. With ddof=1 the dot is divided by 2 (X.shape[1] - 1), while with ddof=0 the dot is divided by 3 (X.shape[1] - 0).
+                dist[c] = ( Xc.mean(axis = 0), np.cov(Xc, rowvar = False) )
+            
+            dists.append(dist)
+
+
+        for c in set(y):
+
+            mkld = Multivarate_KLD(dists[0][c], dists[1][c])
+            print('Multivarate KLD between the orignal and reconstructed signals ( y = ' + str(c) +  '): ', round(mkld,3))
+    
+        print('\n ------ Class-wise Multivarate KLD on LDA component -----')
+        
+        X_lda = LinearDiscriminantAnalysis().fit_transform(X,y)[:,0].flatten()
+        Xr_lda = LinearDiscriminantAnalysis().fit_transform(Xr,y)[:,0].flatten()
+
+        for c in set(y):    
+            Xc1 = X_lda[y == c]
+            Xc2 = Xr_lda[y == c]
+
+        ukld = Univariate_KLD( (Xc1.mean(), Xc1.std()),  (Xc2.mean(), Xc2.std()) )
+        print('KLD between the orignal and reconstructed signals ( y = ' + str(c) +  '): ', round(ukld,3))
     
     return Z, Xr
 
+def Univariate_KLD(p, q):
+
+    # p is target distribution
+    return np.log(q[1] / p[1]) + (p[1] ** 2 + (p[0] - q[0]) ** 2) / (2 * q[1] ** 2) - 0.5
+
+
+def Multivarate_KLD(p, q):
+
+    a = np.log(np.linalg.det(q[1])/np.linalg.det(p[1]))
+    b = np.trace(np.dot(np.linalg.inv(q[1]), p[1]))
+    c = np.dot(np.dot(np.transpose(q[0] - p[0]), np.linalg.inv(q[1])), (q[0] - p[0]))
+    n = p[1].shape[0]
+    return 0.5 * (a - n + b + c)
 
 def GridSearch_Sensing_n_Recovery(x, PSIs, ks = [0.1, 0.2, 0.5, 1.001], solver = 'LASSO'):
 
