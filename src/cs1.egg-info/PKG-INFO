@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: cs1
-Version: 0.0.5
+Version: 0.0.6
 Summary: Compressed Sensing library for 1D Spectroscopic Profiling Data
 Home-page: https://github.com/zhangys11/cs1
 Author: Yinsheng Zhang (Ph.D.)

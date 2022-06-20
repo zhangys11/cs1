@@ -12,7 +12,7 @@ Compressed Sensing library for 1D Spectroscopic Profiling
 
     # Generate common non-adaptive bases and save to a local pickle file.
     # The generation process can be very slow, so save it for future use.
-    cs.Generate_PSIHs(n, savepath = 'PSIHs_' + str(n) + '.pkl') # n is the data/signal dimensionality
+    cs.Generate_PSIs(n, savepath = 'PSIs_' + str(n) + '.pkl') # n is the data/signal dimensionality
 
     # load back bases
     file = open('PSIs_' + str(n) + '.pkl','rb')
