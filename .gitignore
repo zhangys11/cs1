@@ -1,3 +1,5 @@
 
 *.pyc
 dist/
+notebooks/.ipynb_checkpoints/Compressed Sensing-checkpoint.ipynb
+src/cs1.egg-info/

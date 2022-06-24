@@ -1,29 +1,31 @@
-import matplotlib.pyplot as plt
-import pylab, matplotlib
-import numpy as np
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from tqdm import tqdm
-import time
-import matplotlib.ticker as mticker
-import cv2
-import matplotlib.cm as cm
-from sklearn.linear_model import Lasso, LassoCV
-import pywt
-from scipy.stats import ortho_group
-import scipy
-from scipy import pi
-from scipy.linalg import hadamard
 import math
-from scipy.stats import ortho_group
+import cv2
+import time
+import scipy
+import pywt
 import pickle
+import pylab
+import matplotlib
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+import matplotlib.cm as cm
+from os.path import isfile
+
+import numpy as np
+from numpy.fft import fft, ifft
+from tqdm import tqdm
+
 from sklearn.decomposition import PCA
-import scipy.signal as signal
-from sklearn.linear_model import OrthogonalMatchingPursuit
-from sklearn.linear_model import OrthogonalMatchingPursuitCV
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.linear_model import Lasso, LassoCV, OrthogonalMatchingPursuit, OrthogonalMatchingPursuitCV
+from scipy.stats import ortho_group
+from scipy.linalg import det,hadamard
+from scipy.signal import wavelets
+from scipy.io import wavfile
+
 from pyDRMetrics.pyDRMetrics import *
-
-from .plotComponents2D import *
-
+from pydub import AudioSegment
+from pydub.playback import play
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -141,7 +143,7 @@ def dwtmtx(N, wavelet = 'db3', display = True):
         plt.title(wavelet + " Wavelet Matrix (" + str(N) + " , " + str(N) + ")")
         plt.axis('off')
         plt.show()    
-        print('det(DWT_MTX) = ', round(scipy.linalg.det(mtx), 5))   
+        print('det(DWT_MTX) = ', round(det(mtx), 5))   
 
     return mtx, N
 
@@ -176,7 +178,7 @@ def rvsmtx(N, display = True):
         plt.axis('off')
         plt.show()
     
-    print('det(RVS_MTX) = ',  round(scipy.linalg.det(mtx), 5))    
+    print('det(RVS_MTX) = ',  round(det(mtx), 5))    
     return mtx
 
 def Generate_PSI(n, psi_type = 1):
@@ -458,7 +460,7 @@ def Sensing(x, k = 0.2):
 
     return xs, r
 
-from scipy.sparse import csr_matrix
+# from scipy.sparse import csr_matrix
 def MeasurementMatrix (N, r, t = 'DCT'): 
 
     '''
@@ -958,7 +960,7 @@ def Simulate_ECG(bpm = 60, time_length = 10, display = True):
 
     # The "Daubechies" wavelet is a rough approximation to a real,
     # single, heart beat ("pqrst") signal
-    pqrst = signal.wavelets.daub(10)
+    pqrst = wavelets.daub(10)
 
     # Add the gap after the pqrst when the heart is resting. 
     samples_rest = 10
@@ -1052,14 +1054,62 @@ def dft_lossy_signal_compression(x, percent = 99):
 
     return lossy_idft
 
-def Frequency_Analysis(x):
+def plotComponents2D(X, y, labels = None, use_markers = False, ax=None, legends = None, tags = None):
+    '''
+    This is a copy of qsi.vis.plotComponents2D()
+    '''
 
-    fourier = np.fft.fft(x)
-    n = len(x)
-    FFT = abs(fourier)
-    freq = np.fft.fftfreq(n, d=1) # d - Sample spacing (inverse of the sampling rate). Defaults to 1.
-    plt.plot(freq, FFT)
+    if X.shape[1] < 2:
+        print('ERROR: X MUST HAVE AT LEAST 2 FEATURES/COLUMNS! SKIPPING plotComponents2D().')
+        return
+    
+    # Gray shades can be given as a string encoding a float in the 0-1 range
+    colors = ['0.9', '0.1', 'red', 'blue', 'black','orange','green','cyan','purple','gray']
+    markers = ['o', 's', '^', 'D', 'H', 'o', 's', '^', 'D', 'H', 'o', 's', '^', 'D', 'H', 'o', 's', '^', 'D', 'H']
 
+    if (ax is None):
+        fig, ax = plt.subplots()
+        
+    if (y is None or len(y) == 0):
+        labels = [0] # only one class
+    if (labels is None):
+        labels = set(y)
+
+    i=0        
+
+    for label in labels:
+        if y is None or len(y) == 0:
+            cluster = X
+        else:
+            cluster = X[np.where(y == label)]
+        # print(cluster.shape)
+
+        if use_markers:
+            ax.scatter([cluster[:,0]], [cluster[:,1]], 
+                       s=40, 
+                       marker=markers[i], 
+                       facecolors='none', 
+                       edgecolors=colors[i+3],
+                       label= (str(legends[i]) if legends is not None else ("Y = " + str(label)  + ' (' + str(len(cluster)) + ')')) )
+        else:
+            ax.scatter([cluster[:,0]], [cluster[:,1]], 
+                       s=70, 
+                       facecolors=colors[i],  
+                       label= (str(legends[i]) if legends is not None else ("Y = " + str(label) + ' (' + str(len(cluster)) + ')')), 
+                       edgecolors = 'black', 
+                       alpha = .4) # cmap='tab20'                
+        i=i+1
+    
+    if (tags is not None):
+        for j,tag in enumerate(tags):
+            ax.annotate(str(tag), (X[j,0] + 0.1, X[j,1] - 0.1))
+        
+    ax.legend()
+
+    ax.axes.xaxis.set_visible(False) 
+    ax.axes.yaxis.set_visible(False)
+    
+    return ax
 
 ############ Below are TVSM functions ##############
 
@@ -1429,3 +1479,124 @@ def Image_Sensing_n_Recovery(path, k = 0.2, alpha = 0.01, t = 'DCT', fast_lasso 
     plt.show()
 
     return x, z, xr, w, h
+
+############### AUDIO ###############
+def play_wav(path):
+
+    if (not isfile(path)):
+        print(path, 'is not a valid file path')
+        return
+
+    song = AudioSegment.from_wav(path)
+    play(song) # need to install ffmpg
+
+def read_wav(path, ch=None, display=True):
+    rate, data = wavfile.read(path)
+    print('data shape: ', data.shape)
+    print("channels:", data.shape[1])    
+    length = data.shape[0] / rate
+    print('length:',length)
+    print('sampling rate:', rate)
+    
+    if display == True:
+        OFFSET = data.max()*1.5
+        time = np.linspace(0., length, data.shape[0])
+        plt.figure(figsize = (12,6))
+        for c in range(data.shape[1]):
+            plt.plot(time, data[:, c] + OFFSET*c, label="channel "+str(c), alpha=0.3)
+        plt.legend()
+        plt.xlabel("Time [s]")
+        plt.ylabel("Amplitude")
+        plt.show()
+
+    if not ch:
+        return data, rate
+        
+    if not (ch >= 0 and ch < data.shape[1]):
+        raise ValueError('ch is invalid. should be an integer within [0,nchannels)')
+    
+    return data[:, ch], rate
+
+def frequency_spectrum(x, sf):
+    """
+    Derive frequency spectrum of a signal from time domain
+
+    Parameters
+    ----------
+    ch : channel signal
+    sr : sampling frequency
+
+    Return
+    ------
+    Frequencies and their content distribution
+    """
+    x = x - np.average(x)  # zero-centering
+
+    n = len(x)
+    k = np.arange(n)
+    tarr = n / float(sf)
+    frqarr = k / float(tarr)  # two sides frequency range
+
+    frqarr = frqarr[range(n // 2)]  # one side frequency range
+
+    x = fft(x) / n  # fft computing and normalization
+    x = x[range(n // 2)]
+
+    return frqarr, abs(x)
+
+def analyze_signal(ch, sr, frange = 1.0):
+    """
+    Analyze the channel signal
+
+    Parameters
+    ----------
+    ch : channel signal
+    sr : sampling frequency
+    """
+
+    y = ch  # use the first channel (or take their average, alternatively)
+    print(y.shape)
+    t = np.arange(len(y)) / float(sr)
+
+    plt.figure(figsize=(12,18))
+    plt.subplot(3, 1, 1)
+    plt.plot(t, y)
+    plt.xlabel('time (s)')
+    plt.ylabel('signal')
+
+    frq, X = frequency_spectrum(y, sr)
+
+    plt.subplot(3, 1, 2)
+    ub = math.floor(len(frq)*frange)
+    plt.plot(frq[:ub], X[:ub], alpha=0.3)
+    plt.xlabel('freq (Hz)')
+    plt.ylabel('|FFT|')
+
+    plt.subplot(3, 1, 3)
+    fourier = fft(y)
+    FFT = abs(fourier)
+    freq = np.fft.fftfreq(len(y), d=1/sr) # d - Sample spacing (inverse of the sampling rate). Defaults to 1.
+    plt.plot(freq, FFT, alpha=0.3)
+    plt.xlabel('freq (Hz)')
+    plt.ylabel('|FFT| two-sided')
+
+    plt.tight_layout()
+
+    plt.show()
+
+def analyze_wav(path, frange = 1.0):
+    """
+    :param path: wave file path
+    :param frange: the first frange percentage to be shown in the spectrum plot
+    """
+    if (not isfile(path)):
+        print(path, 'is not a valid file path')
+        return
+    
+    data, rate = read_wav(path)
+
+    for i in range(data.shape[1]):
+        print('--- CH' + str(i) + ' ---')
+        analyze_signal(data[:, i], rate, frange)
+        
+    return data, rate

@@ -32,7 +32,10 @@ def LDA(X, y, display = True):
         within_class_scatter_matrix += (Xc-mc).T @ (Xc-mc)
         demean = (mc - feature_means).reshape(-1,1)
         between_class_scatter_matrix += len(yc) * demean @ demean.T / len(y)
-        
+
+    # Solve the generalized eigenvalue problem for 𝑆𝑆=𝑆𝑏/𝑆𝑤 to obtain the linear discriminants.
+    SS = pinv(within_class_scatter_matrix).dot(between_class_scatter_matrix)
+
     if display:
 
         fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(18,6))
@@ -44,8 +47,6 @@ def LDA(X, y, display = True):
         ax[1].axis('off')
         ax[1].set_title('between-class scatter matrix (Sb)')
 
-        # Solve the generalized eigenvalue problem for 𝑆𝑆=𝑆𝑏/𝑆𝑤 to obtain the linear discriminants.
-        SS = pinv(within_class_scatter_matrix).dot(between_class_scatter_matrix)
         ax[2].imshow(SS, cmap = 'gray')
         ax[2].axis('off')
         ax[2].set_title('SS = Sb/Sw')
