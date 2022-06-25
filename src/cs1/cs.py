@@ -1544,7 +1544,7 @@ def frequency_spectrum(x, sf):
 
     return frqarr, abs(x)
 
-def analyze_signal(ch, sr, frange = 1.0):
+def analyze_signal(ch, sr = None, frange = 1.0):
     """
     Analyze the channel signal
 
@@ -1558,12 +1558,11 @@ def analyze_signal(ch, sr, frange = 1.0):
     print(y.shape)
     t = np.arange(len(y)) / float(sr)
 
-    plt.figure(figsize=(12,18))
+    plt.figure(figsize=(12,12))
     plt.subplot(3, 1, 1)
-    plt.plot(t, y)
+    plt.plot(t, y, alpha=0.3)
     plt.xlabel('time (s)')
     plt.ylabel('signal')
-
     frq, X = frequency_spectrum(y, sr)
 
     plt.subplot(3, 1, 2)
