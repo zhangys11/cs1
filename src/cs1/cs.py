@@ -1133,6 +1133,12 @@ def Time2Seed(t = None):
 
 def Seed2Time(s):
     return time.ctime(s)
+    
+def print_wavelet_families():
+
+    for family in pywt.families():
+        print("%s family: " % family + ', '.join(pywt.wavelist(family)))
+
 
 ############ Below are image-related functions ##############
 
@@ -1366,11 +1372,6 @@ def img_dwt(path, wavelet = 'db3', flavor = 1):
         # v = cv2.Laplacian(np.log(abs(img_dwt)), cv2.CV_64F).var()
         # print('Laplacian var of DWT = ', v)  #nan
 
-def print_wavelet_families():
-
-    for family in pywt.families():
-        print("%s family: " % family + ', '.join(pywt.wavelist(family)))
-
 
 def dct_lossy_image_compression(path, percent = 99):
 
@@ -1544,7 +1545,7 @@ def frequency_spectrum(x, sf):
 
     return frqarr, abs(x)
 
-def analyze_signal(ch, sr = None, frange = 1.0):
+def analyze_signal(ch, sr, frange = 1.0):
     """
     Analyze the channel signal
 
@@ -1563,6 +1564,7 @@ def analyze_signal(ch, sr = None, frange = 1.0):
     plt.plot(t, y, alpha=0.3)
     plt.xlabel('time (s)')
     plt.ylabel('signal')
+
     frq, X = frequency_spectrum(y, sr)
 
     plt.subplot(3, 1, 2)
@@ -1599,3 +1601,10 @@ def analyze_wav(path, frange = 1.0):
         analyze_signal(data[:, i], rate, frange)
         
     return data, rate
+
+def save_wav(path, y, rate = 48000):
+
+    wavfile.write(path, rate=rate, data = y.astype(np.int16))
+    # load back and check the saved wav
+    song = AudioSegment.from_wav(path)
+    play(song)
