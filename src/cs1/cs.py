@@ -24,8 +24,7 @@ from scipy.signal import wavelets
 from scipy.io import wavfile
 
 from pyDRMetrics.pyDRMetrics import *
-from pydub import AudioSegment
-from pydub.playback import play
+from pydub import AudioSegment, playback
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -1133,7 +1132,7 @@ def Time2Seed(t = None):
 
 def Seed2Time(s):
     return time.ctime(s)
-    
+
 def print_wavelet_families():
 
     for family in pywt.families():
@@ -1489,7 +1488,7 @@ def play_wav(path):
         return
 
     song = AudioSegment.from_wav(path)
-    play(song) # need to install ffmpg
+    playback.play(song) # need to install ffmpg
 
 def read_wav(path, ch=None, display=True):
     rate, data = wavfile.read(path)
@@ -1602,9 +1601,14 @@ def analyze_wav(path, frange = 1.0):
         
     return data, rate
 
-def save_wav(path, y, rate = 48000):
+def save_wav(path, y, rate = 48000, play = False):
+    '''
+    Parameters
+    ----------
+    play : whether play the sound file after saving
+    '''
 
     wavfile.write(path, rate=rate, data = y.astype(np.int16))
-    # load back and check the saved wav
-    song = AudioSegment.from_wav(path)
-    play(song)
+    
+    if play:
+        play_wav(path)
