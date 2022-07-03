@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import matplotlib.cm as cm
 from os.path import isfile
+import wave
 
 import numpy as np
 from numpy.fft import fft, ifft
@@ -1612,3 +1613,47 @@ def save_wav(path, y, rate = 48000, play = False):
     
     if play:
         play_wav(path)
+
+def split_wav(path, cut_length = 1):
+        '''
+        Split a wav file to n pieces.
+
+        path : input wav file path
+        cut_length : time length in second
+        '''
+
+        f = wave.open(path, 'rb')
+        params = f.getparams() #读取音频文件信息
+        nchannels, sampwidth, framerate, nframes = params[:4]  #声道数, 量化位数, 采样频率, 采样点数   
+        str_data = f.readframes(nframes)
+        f.close()
+        wave_data = np.frombuffer(str_data, dtype=np.short)
+        #根据声道数对音频进行转换
+        if nchannels > 1:
+                wave_data.shape = -1, 2
+                wave_data = wave_data.T
+                temp_data = wave_data.T
+        else:
+                wave_data = wave_data.T
+                temp_data = wave_data.T
+
+        CutFrameNum = framerate * cut_length  
+        Cutnum =nframes/CutFrameNum  #音频片段数
+        StepNum = int(CutFrameNum)
+        StepTotalNum = 0
+   
+        for j in range(int(Cutnum)):
+            FileName = path + "-" + str(j) + ".wav" 
+            temp_dataTemp = temp_data[StepNum * (j):StepNum * (j + 1)]
+            StepTotalNum = (j + 1) * StepNum
+            temp_dataTemp.shape = 1, -1
+            temp_dataTemp = temp_dataTemp.astype(np.short)# 打开WAV文档
+            f = wave.open(FileName, 'wb')
+            # 配置声道数、量化位数和取样频率
+            f.setnchannels(nchannels)
+            f.setsampwidth(sampwidth)
+            f.setframerate(framerate)
+            f.writeframes(temp_dataTemp.tostring())  # 将wav_data转换为二进制数据写入文件
+            f.close()
+            
+split_wav("cicada.wav",1)
