@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import cv2
 import pywt
 import numpy as np
-import matplotlib.cm as cm
+from matplotlib import cm
 from .. import cs, basis
 
 def get_img_data(path):
