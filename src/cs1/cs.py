@@ -7,6 +7,8 @@ import scipy
 import cv2
 import matplotlib
 import matplotlib.pyplot as plt
+from matplotlib import cm
+import pylab
 
 from sklearn.decomposition import PCA
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
@@ -36,7 +38,7 @@ def Sensing(x, k = 0.2, flavor = 'identity'):
 
     n = len(x)
     
-    if flavor == 'guassian':
+    if flavor == 'gaussian':
         PHI,_ = GetSensingMatrix(n, k = k, flavor = flavor)
         return SensingWithPHI(x, PHI), PHI
     
@@ -84,7 +86,8 @@ def MeasurementMatrix (N, r, t = 'DCT'):
     
     return A # .toarray()
 
-def Recovery (A, xs, t = 'DCT', PSI = None, solver = 'LASSO', fast_lasso = False, display = True):
+def Recovery (A, xs, t = 'DCT', PSI = None, solver = 'LASSO', fast_lasso = False, \
+    display = True, verbose = False):
     '''    
     Solve the optimization problem A@z = y
     
@@ -110,9 +113,9 @@ def Recovery (A, xs, t = 'DCT', PSI = None, solver = 'LASSO', fast_lasso = False
 
         # 实测并未发现两种模式的运行时间差异
         if fast_lasso:
-            lasso = LassoCV(alphas = alphas, selection = 'random', tol = 0.001) # ‘random’ often leads to significantly faster convergence especially when tol is higher than 1e-4.
+            lasso = LassoCV(alphas = alphas, selection = 'random', tol = 0.001, n_jobs=-1, verbose = verbose) # ‘random’ often leads to significantly faster convergence especially when tol is higher than 1e-4.
         else:
-            lasso = LassoCV(alphas = alphas, selection = 'cyclic')
+            lasso = LassoCV(alphas = alphas, selection = 'cyclic', n_jobs=-1, verbose = verbose)
 
         lasso.fit(A, xs)
         z = lasso.coef_
@@ -192,7 +195,12 @@ def Sensing_n_Recovery(x, k = 0.2, t = 'DCT', solver = 'LASSO', \
         matplotlib.rcParams.update({'font.size': 20})
 
         fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(32,6))
-        ax[0].plot(z, color = 'gray')
+
+        if np.any(np.iscomplex(z)):
+            ax[0].plot(np.abs(z), color='gray')
+        else:
+            ax[0].plot(z, color = 'gray')
+
         ax[0].set_title('recovered latent representation (z)')
 
         ax[1].plot(xr, color = 'gray')
@@ -299,7 +307,12 @@ def GridSearch_Sensing_n_Recovery(x, PSIs, ks = [0.1, 0.2, 0.5, 1.001], solver =
         plt.axis('off')
             
         plt.subplot(rows,COLS,COLS*idx+2)
-        plt.plot(z, color='gray')
+
+        if np.any(np.iscomplex(z)):
+            plt.plot(np.abs(z), color='gray')
+        else:
+            plt.plot(z, color = 'gray')
+                
         if idx == 0:
             plt.title('z (latent space)') # '\n'+psi_name + 
         if psi_name == 'EBP':

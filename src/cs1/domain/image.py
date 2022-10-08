@@ -7,7 +7,7 @@ from .. import cs, basis
 
 def get_img_data(path):
 
-    img = cv2.imread(path, cv2.IMREAD_GRAYSCALE) # input a square image
+    img = cv2.imread(path, cv2.IMREAD_GRAYSCALE).astype('float') # input a square image
     w,h = img.shape
     return img.reshape(w*h), w, h # expand to 1D array
 

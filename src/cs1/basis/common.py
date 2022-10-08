@@ -6,7 +6,7 @@ import matplotlib.cm as cm
 import numpy as np
 import scipy
 from scipy.stats import ortho_group
-from .. import GetSensingMatrix
+from .. import GetSensingMatrix,PSI_NAMES
 from ..metrics import mutual_coherence
 
 

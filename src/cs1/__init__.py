@@ -4,6 +4,9 @@ __version__ = importlib.metadata.version('cs1')
 import warnings
 warnings.filterwarnings("ignore")
 
+import math
+import numpy as np
+
 PSI_NAMES = ['IDM', 'DCT', 'DFT', 'DWT', 'HWT', 'ROM']
 PSI_LONGNAMES = ['Identity Matrix', 'Discrete Cosine Transform', 'Discrete Fourier Transform', 
 'Discrete Wavelet Transform', 'Hadamard-Walsh Matrix', 'Random Orthogonal Matrix']

@@ -165,7 +165,11 @@ def analyze_sparsity (x, PSIs, compute_mc = False):
         r = (np.abs(np.array(z)) <= 0.02 * MAX).sum() / len(z)  # use 0.02 MAX ABS as threshold
         
         plt.subplot(rows,2,2*idx+1)
-        plt.plot(z, color='gray')
+        if np.any(np.iscomplex(z)):
+            plt.plot(np.abs(z), color='gray')
+        else:
+            plt.plot(z, color='gray')
+            
         title = key
         if key in PSI_NAMES:
             psi_idx = PSI_NAMES.index(key)
@@ -181,7 +185,8 @@ def analyze_sparsity (x, PSIs, compute_mc = False):
         
         plt.subplot(rows,2,2*idx+2)
         plt.scatter(thresholds, rs, color='gray')
-        plt.title('AUC = ' + str(round(auc,3)) + ', $r_{0.02max}$ = ' + str(round(r,3)) + ', gini = ' + str(round(Sparsity(z),3)))
+        plt.title('AUC = ' + str(round(auc,3)) + ', $r_{0.02max}$ = ' + str(round(r,3)) \
+            + ', gini = ' + str(round(sparsity(z),3)))
         pylab.xlim([0,0.02])
         pylab.ylim([0,1.0])
         plt.xticks(np.arange(0.0, 0.021, 0.005))

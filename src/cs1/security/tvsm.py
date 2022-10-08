@@ -45,11 +45,13 @@ def brute_force_total_guesses(N = 3000, K = 100, verbose = True):
     ------
     total guesses in base 10.
     '''
-
-    print('N = ', N, ', K = ', K)
+    
     LOG10C = log10(factorial(N)) - log10(factorial(N - K)) 
-    print('A(N,K) in log10 = ', LOG10C ) 
-    print('Total years needed to iterate all combinations (in log10) = ', LOG10C - log10(3600 * 24 * 365.25))
+
+    if verbose:
+        print('N = ', N, ', K = ', K)
+        print('A(N,K) in log10 = ', LOG10C ) 
+        print('Total years needed to iterate all combinations (in log10) = ', LOG10C - log10(3600 * 24 * 365.25))
 
     return LOG10C
 
@@ -61,11 +63,11 @@ def brute_force_guess_plot(N = 3000):
     plt.figure(figsize=(16,12))
     for k in [0.1, 0.2, 0.3, 0.4, 0.5, 1.0]:        
         A = []
-        for n in N:
+        for n in range(1,N+1):
             K = round(n * k)
             a = brute_force_total_guesses(n, K, verbose = False) # log10(factorial(n)) - log10(factorial(n - K))
             A.append(a)
-        plt.plot(N, A, label = 'k = ' + str(k) )
+        plt.plot(range(1,N+1), A, label = 'k = ' + str(k) )
 
     plt.ylabel('search space ($ N_\Phi $) in log 10')
     plt.xlabel('signal dimensionality (n)')
@@ -75,7 +77,7 @@ def brute_force_guess_plot(N = 3000):
     plt.show()
     
 
-def brute_force_guess(xs, N, t = 'DCT', ITER = 100000):
+def brute_force_guess(xs, N, t = 'DCT', solver = 'LASSO', ITER = 100000):
     '''
     Paramters
     ---------
@@ -97,7 +99,7 @@ def brute_force_guess(xs, N, t = 'DCT', ITER = 100000):
     for i in tqdm( range(ITER) ):
         idx = random.sample(range(N), K)
         A = MeasurementMatrix(N, idx, t)
-        xr, z = Recovery (A, xs, t = t, silent = True)        
+        xr, z = Recovery (A, xs, t = t, solver = solver, display = False)        
         
         MAX = abs(max(z, key=abs))
         thresholds = np.array(range(100)) / 5000

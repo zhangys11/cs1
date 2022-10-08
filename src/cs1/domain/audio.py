@@ -6,6 +6,7 @@ import wave
 from scipy.signal import wavelets
 from scipy.io import wavfile
 import os
+from . import frequency_spectrum
 
 
 def simulate_ECG(bpm = 60, time_length = 10, display = True):
@@ -184,32 +185,7 @@ def read_wav(path, ch=None, display=True):
     return data[:, ch], rate
 
 def audio_frequency_spectrum(x, sr):
-    """
-    Get frequency spectrum of a signal from time domain. 
-    Can be used on audio signal or other 1-D data.
-
-    Parameters
-    ----------
-    ch : channel signal
-    sf : sampling rate
-
-    Return
-    ------
-    Frequencies and their content distribution
-    """
-    x = x - np.average(x)  # zero-centering
-
-    n = len(x)
-    k = np.arange(n)
-    tarr = n / float(sr)
-    frqarr = k / float(tarr)  # two sides frequency range
-
-    frqarr = frqarr[range(n // 2)]  # one side frequency range
-
-    x = np.fft.fft(x) / n  # fft computing and normalization
-    x = x[range(n // 2)]
-
-    return frqarr, abs(x)
+    return frequency_spectrum(x, sr)
 
 def analyze_audio_signal(ch, sr, frange = 1.0):
     """
