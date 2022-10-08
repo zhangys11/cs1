@@ -1,8 +1,10 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from numpy.linalg import inv, pinv, svd, norm
+from sklearn.linear_model import Lasso
 
-from .cs import *
+from .. import GetSensingMatrix
+from .common import *
 
 def LDA(X, y, display = True):
     '''

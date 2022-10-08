@@ -1,459 +1,45 @@
-import math
-import cv2
-import time
+'''
+Contains CS basic operations and pipelines
+'''
+import numpy as np
+import pandas as pd
 import scipy
-import pywt
-import pickle
-import pylab
+import cv2
 import matplotlib
 import matplotlib.pyplot as plt
-import matplotlib.ticker as mticker
-import matplotlib.cm as cm
-from os.path import isfile
-import wave
-
-import numpy as np
-from numpy.fft import fft, ifft
-from tqdm import tqdm
 
 from sklearn.decomposition import PCA
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn.linear_model import Lasso, LassoCV, OrthogonalMatchingPursuit, OrthogonalMatchingPursuitCV
-from scipy.stats import ortho_group
-from scipy.linalg import det,hadamard
-from scipy.signal import wavelets
-from scipy.io import wavfile
+from sklearn.linear_model import LassoCV, OrthogonalMatchingPursuit, OrthogonalMatchingPursuitCV
+from statsmodels.multivariate.manova import MANOVA
 
-from pyDRMetrics.pyDRMetrics import *
-from pydub import AudioSegment, playback
+from . import GetSensingMatrix, SensingWithPHI, PSI_LONGNAMES, PSI_NAMES
+from .basis.common import Generate_PSI
+from .metrics import Univariate_KLD, Multivarate_KLD, calculate_recon_error
 
-import warnings
-warnings.filterwarnings("ignore")
-
-#region Performance Test. Compare NNRW with mainstream classifier models.
-
-PSI_NAMES = ['IDM', 'DCT', 'DFT', 'DWT', 'HWT', 'ROM']
-PSI_LONGNAMES = ['Identity Matrix', 'Discrete Cosine Transform', 'Discrete Fourier Transform', 
-'Discrete Wavelet Transform', 'Hadamard-Walsh Matrix', 'Random Orthogonal Matrix']
-PSI_MC = ['$\sqrt{n}$', '$\sqrt{2}$', '1', 'around 0.8 $\sqrt{n}$', '1', '$\sqrt{2 log(n)}$']
-
-def dctmtx(m, n, display = True):    
-    '''
-    Return an m-by-n DCT sensing matrix
-    '''
-    mtx = np.zeros((m,n))
-    N = n
-
-    mtx[0, :] = 1 * np.sqrt(1/N) 
-    for i in range(1, m):
-        for j in range(n):
-            mtx[i, j] = np.cos(np.pi *i * (2*j+1) / (2*N)) * np.sqrt(2/N)
-    
-    if display:
-        plt.figure()
-        plt.imshow(mtx, interpolation='nearest', cmap=cm.Greys_r)
-        plt.axis('off')
-        plt.title("DCT (" + str(m) + " , " + str(n) + ")")
-        plt.show()
-    
-    return mtx
-
-def dftmtx(N, flavor = 1, display = True):    
-
-    if flavor == 2:
-        i, j = np.meshgrid(np.arange(N), np.arange(N))
-        w = np.exp( - 2 * np.pi * 1j / N )
-        mtx = np.power( w, i * j ) / np.sqrt(N)
-
-    else:
-        mtx = np.zeros((N,N), dtype=np.complex)
-        w = np.exp(-2 * np.pi * 1j / N) # python uses j as imaginary unit
-
-        for j in range(N):
-            for k in range(N):
-                mtx[j, k] = np.power(w, k*j) / np.sqrt(N)
-
-    if display:
-        f,ax = plt.subplots(1,3,figsize=(4*3,4))
-
-        f.suptitle("DFT Sensing Matrix using Flavor " + str(flavor))
-
-        plt.subplot(1,3,1)
-        plt.imshow(abs(mtx), interpolation='nearest', cmap=cm.Greys_r)  
-        plt.axis('off')
-        ax[0].set_title('abs')
-        
-        plt.subplot(1,3,2)
-        plt.imshow(np.angle(mtx), interpolation='nearest', cmap=cm.Greys_r)
-        plt.axis('off')   
-        ax[1].set_title('phase')
-
-        plt.subplot(1,3,3)
-        E = np.dot(mtx, mtx)
-        plt.imshow(abs(E), cmap=cm.Greys_r)
-        plt.axis('off')
-        ax[2].set_title('DFT @ DFT.T = I')
-    
-    return mtx
-
-def hwtmtx(n, display = True):
-    '''
-    Return a HWT matrix. Its dimension is nearest 2^n above N. 
-    '''
-    
-    NN = 2**(n-1).bit_length() # make sure it is a 2**n value
-    print('Expanded to ', NN, ', Divide by', 2**(math.log(NN,2)/2))
-    
-    mtx = hadamard(NN) / (2**(math.log(NN,2)/2))
-    
-    # Use slogdet when mtx is big, e.g. > 2000
-    logdet = np.linalg.slogdet(mtx)
-    det = logdet[0] * np.exp(logdet[1])
-    print('det(HWT_MTX) =', round(det, 5))
-    
-    if display:
-        plt.figure()
-        plt.imshow(mtx, interpolation='nearest', cmap=cm.Greys_r)
-        plt.axis('off')
-        plt.title("Hadamard-Walsh Matrix (" + str(NN) + " , " + str(NN) + ")")
-        plt.show()
-
-    return mtx, NN
-
-def dwtmtx(N, wavelet = 'db3', display = True):
-    '''
-    Return a DWT matrix. Its dimension is nearest 2*n (even number) above N. 
-    '''
-    if N % 2 == 1:
-        N = N +1
-        print('HWT requires even dimensions. Expanded to ', N)
-
-    mtx = np.zeros((N,N))  
-    I = np.identity(N)
-        
-    for i in range(N):
-        cA, cD = pywt.dwt(I[i,:], wavelet, pywt.Modes.periodization)
-        # print(cA.shape, cD.shape)
-        mtx[i,:] = list(cA) + list(cD)
-    
-    if display:
-
-        plt.figure()
-        plt.imshow(mtx, interpolation='nearest', cmap=cm.Greys_r)
-        plt.title(wavelet + " Wavelet Matrix (" + str(N) + " , " + str(N) + ")")
-        plt.axis('off')
-        plt.show()    
-        print('det(DWT_MTX) = ', round(det(mtx), 5))   
-
-    return mtx, N
-
-def DwtMcCurve():
-
-    Ns = [10, 20, 50, 100, 150, 200, 500, 1000, 2000] # dimensions
-    mcs = []
-    for N in Ns:
-        
-        _, OMEGA = GetSensingMatrix(N)
-        psi, _ = dwtmtx(N, display = False)
-        mc = Mutual_Coherence(psi, OMEGA)
-        # print("N :", N, ".  : ", mc)
-        mcs.append(mc)
-
-    plt.plot(Ns, mcs)
-    plt.title(r'Mutual Coherence (DWT, OMEGA)')
-    plt.show()
-
-    plt.plot(Ns, np.sqrt(Ns) * .8)
-    plt.title(r'0.8 $\sqrt{n}$')
-    plt.show()
-
-def rvsmtx(N, display = True):
-
-    mtx = ortho_group.rvs(N) # uniformly distributed random orthogonal matrix
-    
-    if display:
-        plt.figure()
-        plt.imshow(mtx, interpolation='nearest', cmap=cm.Greys_r)
-        plt.title('Random Orthogonal Matrix')
-        plt.axis('off')
-        plt.show()
-    
-    print('det(RVS_MTX) = ',  round(det(mtx), 5))    
-    return mtx
-
-def Generate_PSI(n, psi_type = 1):
-    '''
-    Parameter
-    ---------
-    psi_type : one of PSI_NAMES or its index
-    '''
-    if psi_type == PSI_NAMES[0] or psi_type == 0:
-        return np.identity(n)
-
-    if psi_type == PSI_NAMES[1] or psi_type == 1:
-        return dctmtx(n,n, display = False)
-
-    if psi_type == PSI_NAMES[2] or psi_type == 2:
-        return dftmtx(n, display = False)
-
-    if psi_type == PSI_NAMES[3] or psi_type == 3:
-        return dwtmtx(n, display = False)
-
-    if psi_type == PSI_NAMES[4] or psi_type == 4:
-        return hwtmtx(n, display = False)
-
-    if psi_type == PSI_NAMES[5] or psi_type == 5:
-        return rvsmtx(n, display = False)
-
-
-def Generate_PSIs(n, savepath, display = True): # "PSIS.pkl"
-
-    # psi_names = ['Identity Matrix', 'DCT', 'DFT', 'DWT', 
-    # 'Hadamard-Walsh Matrix', 'Random Orthogonal Matrix']
-    psi_mtxs = [
-        np.identity(n), # the identitiy matrix, just for comparison
-        dctmtx(n,n, display = display),
-        dftmtx(n, display = display),
-        dwtmtx(n, display = display)[0],
-        hwtmtx(n, display = display)[0],
-        rvsmtx(n, display = display)
-    ]
-
-    PSIs = {}
-
-    for idx, psi in enumerate(PSI_NAMES):
-        PSIs[psi] = psi_mtxs[idx]
-
-    filehandler = open(savepath,"wb")
-    pickle.dump(PSIs, filehandler)
-    filehandler.close()
-
-    print('saved to ' + savepath)
-
-    for key in PSIs:
-        
-        # for some transformations, PSI dimension may differ. e.g. HWT requires 2**n and DWT requires even number
-        n = PSIs[key].shape[0]
-        _, OMEGA = GetSensingMatrix(n)
-        
-        print("Mutual Coherence (" + key, ", OMEGA) : ", Mutual_Coherence(PSIs[key], OMEGA))
-
-def Mutual_Coherence(A,B):
-    '''
-    CS requires PSI and PHI/OMEGA to be incoherent.
-    '''
-
-    assert (A.shape == B.shape)
-    assert (A.shape[0] == A.shape[1])
-
-    n = A.shape[0]
-    p = 0
-    
-    for i in range(n):
-        for j in range(n):
-            a = A[:,i].T
-            b = B[:,j]            
-            tmp = a@b
-            # print(tmp)
-            if (p < tmp):
-                p = tmp
-                
-    return math.sqrt(n)*p
-
-def Sparsity(x, flavor = 'gini'):
-    '''
-    There lacks a concensus on the sparsity measure.
-    This function provides two flaovrs: Lp-norm(0<=p<1) and the Gini index as such a measure.
-    
-    Parameter
-    ---------
-    x : input data, 1d array
-    flavor : 'L0_inverse' is (1 - L0 Norm / N). This flavor is sensative to noises.
-             'gini_v1' and 'gini_v2' will return very close results.
-    '''
-
-    if flavor == 'L0_inverse':
-
-        return (len(x) - np.linalg.norm(x, 0))/len(x)
-
-    elif flavor == 'gini_v1' or flavor == 'gini':
-
-        # (Warning: This is a concise implementation, but it is O(n**2)
-        # in time and memory, where n = len(x).  *Don't* pass in huge samples!)
-
-        # Mean absolute difference
-        mad = np.abs(np.subtract.outer(x, x)).mean()
-        # Relative mean absolute difference
-        rmad = mad/np.mean(x)
-        # Gini coefficient
-        g = 0.5 * rmad
-        return g
-
-    elif flavor == 'gini_v2':
-        
-        # Calculate the Gini coefficient of a numpy array. 
-        # based on bottom eq:
-        # http://www.statsdirect.com/help/generatedimages/equations/equation154.svg
-        # from:
-        # http://www.statsdirect.com/help/default.htm#nonparametric_methods/gini.htm
-        # All values are treated equally, arrays must be 1d
-        array = np.array(x, dtype = 'float16').flatten()
-        if np.amin(array) < 0:
-            # Values cannot be negative:
-            array -= np.amin(array)
-        # Values cannot be 0:
-        array += 0.0000001
-        # Values must be sorted:
-        array = np.sort(array)
-        # Index per array element:
-        index = np.arange(1,array.shape[0]+1)
-        # Number of array elements:
-        n = array.shape[0]
-        # Gini coefficient:
-        return ((np.sum((2 * index - n  - 1) * array)) / (n * np.sum(array)))
-    
-def CompareSparsityFlavors():
-
-    s1 = []
-    s2 = []
-    s3 = []
-
-    for i in range(100):
-        v =  [0]*i + [1]*(100-i) 
-        s1.append(Sparsity (v, flavor = 'L0_inverse'))
-        s2.append(Sparsity (v, flavor = 'gini_v1'))
-        s3.append(Sparsity (v, flavor = 'gini_v2'))
-
-
-    matplotlib.rcParams.update({'font.size': 20})
-
-    fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(24,7))
-
-    fig.suptitle("Calculate sparsity measures on a 100-element array. \nThe zero elements are increased from 0 to 100%")
-
-    ax[0].plot(s1, color = 'gray')
-    ax[0].set_ylabel('L0 reverse')
-    ax[0].set_xlabel('zero percentage')
-
-    ax[1].plot(s2, color = 'gray')
-    ax[1].set_ylabel('GINI v1')
-    ax[1].set_xlabel('zero percentage')
-
-    ax[2].plot(s3, color = 'gray')
-    ax[2].set_ylabel('GINI v2')
-    ax[2].set_xlabel('zero percentage')
-
-    fig.tight_layout()
-    plt.show()
-
-    matplotlib.rcParams.update({'font.size': 12})
-
-
-def Analyze_Sparsity (x, PSIs):
-    '''
-    Parameters
-    ----------
-    x : a 1D signal. Will convert to shape (1,n)
-    PSIs : a dict of PSI matrices
-    '''
-
-    # x = x.reshape((-1,1))
-    # print("reshape x to ", x.shape)
-
-    plt.figure(figsize=(24,48))
-    rows = len(PSIs)
-    matplotlib.rcParams.update({'font.size': 18})
-
-    for idx, key in enumerate(PSIs):
-        
-        PSI = PSIs[key]        
-        xx = np.copy(x)
-        
-        # pad x with zero if necessary, e.g., the HWT case
-        if (len(x) < PSI.shape[0]):
-            xx = np.zeros(PSI.shape[0])
-            xx[:len(x)] = x        
-        
-        PSI_H = PSI.conj().T
-        PSI_INV = np.linalg.pinv(PSI)
-        #print(PSI_H)
-        #print(PSI_INV)
-        # theoretically, PSI_H == PSI_INV
-        z = PSI @ xx
-        # print(z)
-        MAX = abs(max(z, key=abs))
-        # print(MAX)
-        thresholds = np.array(range(100)) / 5000
-        
-        rs =[]
-        for threshold in thresholds:
-            rs.append((np.abs(np.array(z)) <= threshold * MAX).sum() / len(z))
-            
-        auc = 0
-        for i in range(1000):
-            auc += (np.abs(np.array(z)) <= (i+1)/1000 * MAX).sum() / len(z)        
-        auc = auc/1000
-        
-        r = (np.abs(np.array(z)) <= 0.02 * MAX).sum() / len(z)  # use 0.02 MAX ABS as threshold
-        
-        plt.subplot(rows,2,2*idx+1)
-        plt.plot(z, color='gray')
-        title = key
-        if key in PSI_NAMES:
-            psi_idx = PSI_NAMES.index(key)
-            title = PSI_LONGNAMES[ psi_idx ] + ' (' + key + '), MC = ' + PSI_MC[ psi_idx ]
-        plt.title( title )
-        # plt.axis('off')
-        
-        plt.subplot(rows,2,2*idx+2)
-        plt.scatter(thresholds, rs, color='gray')
-        plt.title('AUC = ' + str(round(auc,3)) + ', $r_{0.02max}$ = ' + str(round(r,3)) + ', gini = ' + str(round(Sparsity(z),3)))
-        pylab.xlim([0,0.02])
-        pylab.ylim([0,1.0])
-        plt.xticks(np.arange(0.0, 0.021, 0.005))
-
-    plt.show()    
-    matplotlib.rcParams.update({'font.size': 12})
-
-def GetSensingMatrix(n, k = 0.2, s = None):
-
-    '''
-    Parameters
-    ----------
-    n : signal dimensions
-    k : sampling ratio
-    s : random seed. Specify a seed value for TVSM senarios.
-    '''
-    if s is not None:
-        np.random.seed(s)
-    
-    OMEGA = np.zeros((n,n))
-    pm = np.random.permutation(np.arange(0, n))
-    for i in range(n):
-        OMEGA[i, pm[i]] = 1
-    
-    PHI = OMEGA[:int(n*k)]
-    return PHI, OMEGA
-
-def SensingWithPHI(x, PHI): # x is a list
-    assert (x.shape[0] == PHI.shape[1])
-    return PHI @ x
-
-def Sensing(x, k = 0.2):      
+def Sensing(x, k = 0.2, flavor = 'identity'):      
     '''
     信号采样，发送端处理
 
     Parameters
     ----------
     k : (0,1]. sampling ratio.
+    flavor : 
+        'identity' - use a scramble identity matrix. take its n*k rows as sensing matrix
+        'gaussian' - sampling from N(1, 1/n)
 
     Return
     ------
     xs : sampled signal
     r : sampling indices
     '''
-    
+
     n = len(x)
+    
+    if flavor == 'guassian':
+        PHI,_ = GetSensingMatrix(n, k = k, flavor = flavor)
+        return SensingWithPHI(x, PHI), PHI
+    
     pm = np.random.permutation(np.arange(1, n))
     r = pm[:int(n*k)]
     xs = x[r]
@@ -572,9 +158,12 @@ def Recovery (A, xs, t = 'DCT', PSI = None, solver = 'LASSO', fast_lasso = False
 
     return z, xr
 
-def Sensing_n_Recovery(x, k = 0.2, t = 'DCT', solver = 'LASSO', fast_lasso = False, display = True):
+def Sensing_n_Recovery(x, k = 0.2, t = 'DCT', solver = 'LASSO', \
+    fast_lasso = False, display = True):
     
     '''
+    Provide a complete pipeline for signal sensing and recovery with a speicfic PSI. 
+
     Parameters
     ----------
     k : sampling ratio/percentage. 
@@ -616,177 +205,35 @@ def Sensing_n_Recovery(x, k = 0.2, t = 'DCT', solver = 'LASSO', fast_lasso = Fal
 
     return z, xr
 
-def Dataset_Sensing_n_Recovery (X, y = None, k = 0.2, t = 'DCT', solver = 'LASSO', fast_lasso = False, display = 'all'):
-    
-    '''
-    display : 'all' - display all samples
-              'first' - display only the first sample
-              'none' - don't display
-    '''
-
-    print('\n\n===== Ψ = '  + t + ', k =' + str(round(k,2)) + ' ======\n')
-
-    Z = np.zeros(X.shape)
-    Xr = np.zeros(X.shape)
-
-    if display == 'all':
-        b = True
-    elif display == 'none':
-        b = False
-    
-    if (k > 1.0): # when k > 1.0, return original signal directly
-        Xr = X 
-        Z = X
-    else:
-        for i in range(X.shape[0]):            
-            x = X[i] # X[i,:].ravel().tolist()[0] # get the i-th sample
-
-            if display == 'first':
-                b = (i == 0)
-
-            if b:
-                print('Sample ' + str(i+1))
-
-            xr, z = Sensing_n_Recovery(x, k, t, solver = solver, display = b)
-            Z[i,:] = list(z)
-            Xr[i,:]= xr #[:,0]
-
-    pca = PCA(n_components=None) # n_components == min(n_samples, n_features) - 1. But we will use the first 2 components
-    Z_pca = pca.fit_transform(Z)
-    # plotComponents2D(Z_pca, y, labels, use_markers = False, ax=ax[0])
-    # ax[0].title.set_text('2D-Visualization')
-
-    pca = PCA(n_components=None)
-    Xr_pca = pca.fit_transform(Xr)
-    
-    # For classification problem, continue to analyze with ANOVA and MANOVA
-    if y is None:
-
-        plt.scatter(Xr_pca[:,0], Xr_pca[:,1], s=40, 
-        edgecolors = 'black', alpha = .4)
-        plt.title('2D Visualization')
-        plt.show()
-
-    else:
-
-        fig, ax = plt.subplots(nrows=1, ncols=4, figsize=(24,4))
-
-        pca = PCA(n_components=None)
-        X_pca = pca.fit_transform(X)
-
-        plotComponents2D(X_pca, y = y, use_markers = False, ax=ax[0]) 
-        ax[0].title.set_text('PCA Visualization (X)')
-
-        plotComponents2D(Xr_pca, y = y, use_markers = False, ax=ax[1]) 
-        ax[1].title.set_text('PCA Visualization (Xr)')
-
-        Xc1s = []
-        Xc2s = []
-        title = ''
-        for c in set(y): 
-            # print(Xr.shape, Z.shape, Xr_pca.shape, Z_pca.shape, y.shape)
-            Xc = Xr_pca[y == c]
-            yc = y[y == c]
-            Xc1s.append(list(np.asarray(Xc[:,0]).reshape(1,-1)[0])) # First PC of Class c
-            Xc2s.append(list(np.asarray(Xc[:,1]).reshape(1,-1)[0])) # Second PC of Class c
-
-        #### ANOVA ####
-
-        ax[2].title.set_text('PC1')
-        ax[2].boxplot(Xc1s, notch=False) # plot 1st PC of all classes
-        f,p= scipy.stats.f_oneway(Xc1s[0], Xc1s[1]) # equal to ttest_ind() in case of 2 groups
-        print("f={},p={}".format(f,p))
-        # dict_anova_p1[idx] = p
-        
-        ax[3].title.set_text('PC2')
-        ax[3].boxplot(Xc2s, notch=False)
-        f,p= scipy.stats.f_oneway(Xc2s[0], Xc2s[1])
-        print("f={},p={}".format(f,p))
-        
-        #### MANOVA ####
-
-        import statsmodels
-        from statsmodels.base.model import Model
-        from statsmodels.multivariate.manova import MANOVA
-        import pandas as pd
-
-        df = pd.DataFrame({'PC1':Xr_pca[:,0],'PC2':Xr_pca[:,1],'y':y})
-
-        mv = MANOVA.from_formula('PC1 + PC2 ~ y', data=df) # Intercept is included by default.
-        print(mv.endog_names)
-        print(mv.exog_names)
-        r = mv.mv_test()
-        print(r)
-        #dict_manova_p[idx] = str(r.results['y']['stat']['Pr > F'])
-        
-        #### Classifier ACC
-        from sklearn.model_selection import cross_val_score
-        from sklearn import svm
-        
-        clf = svm.SVC(kernel='linear', C=1)
-        scores = cross_val_score(clf, Xr, y, cv=4)
-        print('SVC ACC: ', scores.mean())      
-        plt.show()
-    
-        # return scores.mean(), str(r.results['y']['stat']['Pr > F'])
-
-        #### Mutlivariate KLD
-
-        n_comp = 2
-        print('\n ------ Class-wise Multivarate KLD on ' + str(n_comp) + ' PCA components -----')
-        
-        dists = []
-        
-        for XPCA in [ X_pca[:,:n_comp], Xr_pca[:,:n_comp] ]:
-
-            dist = {}
-
-            for c in set(y):    
-                Xc = XPCA[y == c]
-                yc = y[y == c]
-                
-                # np.cov()
-                # ddof=1 will return the unbiased estimate, even if both fweights and aweights are specified, and ddof=0 will return the simple average. 
-                # There is exactly 1 difference between np.cov(X) and np.cov(X, ddof=0) which is the bias step. With ddof=1 the dot is divided by 2 (X.shape[1] - 1), while with ddof=0 the dot is divided by 3 (X.shape[1] - 0).
-                dist[c] = ( Xc.mean(axis = 0), np.cov(Xc, rowvar = False) )
-            
-            dists.append(dist)
-
-
-        for c in set(y):
-
-            mkld = Multivarate_KLD(dists[0][c], dists[1][c])
-            print('Multivarate KLD between the orignal and reconstructed signals ( y = ' + str(c) +  '): ', round(mkld,3))
-    
-        print('\n ------ Class-wise Multivarate KLD on LDA component -----')
-        
-        X_lda = LinearDiscriminantAnalysis().fit_transform(X,y)[:,0].flatten()
-        Xr_lda = LinearDiscriminantAnalysis().fit_transform(Xr,y)[:,0].flatten()
-
-        for c in set(y):    
-            Xc1 = X_lda[y == c]
-            Xc2 = Xr_lda[y == c]
-
-        ukld = Univariate_KLD( (Xc1.mean(), Xc1.std()),  (Xc2.mean(), Xc2.std()) )
-        print('KLD between the orignal and reconstructed signals ( y = ' + str(c) +  '): ', round(ukld,3))
-    
-    return Z, Xr
-
-def Univariate_KLD(p, q):
-
-    # p is target distribution
-    return np.log(q[1] / p[1]) + (p[1] ** 2 + (p[0] - q[0]) ** 2) / (2 * q[1] ** 2) - 0.5
-
-
-def Multivarate_KLD(p, q):
-
-    a = np.log(np.linalg.det(q[1])/np.linalg.det(p[1]))
-    b = np.trace(np.dot(np.linalg.inv(q[1]), p[1]))
-    c = np.dot(np.dot(np.transpose(q[0] - p[0]), np.linalg.inv(q[1])), (q[0] - p[0]))
-    n = p[1].shape[0]
-    return 0.5 * (a - n + b + c)
-
 def GridSearch_Sensing_n_Recovery(x, PSIs, ks = [0.1, 0.2, 0.5, 1.001], solver = 'LASSO'):
+    '''
+    Provide a complete pipeline for signal sensing and recovery with a set of candidate PSIs and hyper-parameters.
+    Use grid search strategy to find the best.
+
+    Parameters
+    ----------
+    x : a single data sample (a vector) 
+    '''
+
+    def DynamicProperty(RMSES, PSIs, ks, repeat = 1):
+
+        assert (len(RMSES) == len(PSIs))
+        matplotlib.rcParams.update({'font.size': 16})
+        
+        for i, key in enumerate(PSIs):   
+                
+            plt.figure(figsize=(8,6))
+            
+            plt.scatter(ks, RMSES[i], c='gray', s = 70, label = key)
+            plt.plot(ks, RMSES[i], c='gray')
+            plt.xlabel('k')
+            plt.ylabel('RMSE')
+            
+            plt.legend()
+            plt.show()
+
+        matplotlib.rcParams.update({'font.size': 12})
+
 
     plt.figure(figsize=(40, len(PSIs)*5))
     rows = len(PSIs) + 1
@@ -921,739 +368,216 @@ def GridSearch_Sensing_n_Recovery(x, PSIs, ks = [0.1, 0.2, 0.5, 1.001], solver =
     DynamicProperty(RMSES, PSIs, np.round(ks,2))
     return RMSES
 
-def DynamicProperty(RMSES, PSIs, ks, repeat = 1):
 
-    assert (len(RMSES) == len(PSIs))
-    matplotlib.rcParams.update({'font.size': 16})
-    
-    for i, key in enumerate(PSIs):   
-            
-        plt.figure(figsize=(8,6))
-        
-        plt.scatter(ks, RMSES[i], c='gray', s = 70, label = key)
-        plt.plot(ks, RMSES[i], c='gray')
-        plt.xlabel('k')
-        plt.ylabel('RMSE')
-        
-        plt.legend()
-        plt.show()
-
-    matplotlib.rcParams.update({'font.size': 12})
-
-
-def Simulate_ECG(bpm = 60, time_length = 10, display = True):
-
+def Dataset_Sensing_n_Recovery (X, y = None, k = 0.2, t = 'DCT', solver = 'LASSO', fast_lasso = False, display = 'all'):
     '''
+    Provide a complete pipeline for an entire dataset. 
+    PCA 2D visualization and multivariate KLD are evaluated.
+
     Parameters
     ----------
-    bpm : Simulated Beats per minute rate. For a health, athletic, person, 60 is resting, 180 is intensive exercising
-    time_length : Simumated length of time in seconds
+    X, y : target dataset and labels
+    display : 'all' - display all samples
+              'first' - display only the first sample
+              'none' - don't display
     '''
 
-    bps = bpm / 60
-    capture_length = time_length
+    def plotComponents2D(X, y, labels = None, use_markers = False, ax=None, legends = None, tags = None):
+        '''
+        This is a copy of qsi.vis.plotComponents2D()
+        '''
 
-    # Caculate the number of beats in capture time period 
-    # Round the number to simplify things
-    num_heart_beats = int(capture_length * bps)
-
-
-    # The "Daubechies" wavelet is a rough approximation to a real,
-    # single, heart beat ("pqrst") signal
-    pqrst = wavelets.daub(10)
-
-    # Add the gap after the pqrst when the heart is resting. 
-    samples_rest = 10
-    zero_array = np.zeros(samples_rest, dtype=float)
-    pqrst_full = np.concatenate([pqrst,zero_array])
-
-
-    # Concatonate together the number of heart beats needed
-    ecg_template = np.tile(pqrst_full , num_heart_beats)
-
-    # Add random (gaussian distributed) noise 
-    noise = np.random.normal(0, 0.01, len(ecg_template))
-    ecg_template_noisy = noise + ecg_template
-
-
-    if display:
-
-        # Plot the noisy heart ECG template
-        plt.figure(figsize=(int(time_length * 2), 3))
-        plt.plot(ecg_template_noisy)
-        plt.xlabel('Sample number')
-        plt.ylabel('Amplitude (normalised)')
-        plt.title('Heart ECG Template with Gaussian noise')
-        plt.show()
+        if X.shape[1] < 2:
+            print('ERROR: X MUST HAVE AT LEAST 2 FEATURES/COLUMNS! SKIPPING plotComponents2D().')
+            return
         
-    return ecg_template_noisy
+        # Gray shades can be given as a string encoding a float in the 0-1 range
+        colors = ['0.9', '0.1', 'red', 'blue', 'black','orange','green','cyan','purple','gray']
+        markers = ['o', 's', '^', 'D', 'H', 'o', 's', '^', 'D', 'H', 'o', 's', '^', 'D', 'H', 'o', 's', '^', 'D', 'H']
 
-def dct_lossy_signal_compression(x, percent = 99):    
+        if (ax is None):
+            fig, ax = plt.subplots()
+            
+        if (y is None or len(y) == 0):
+            labels = [0] # only one class
+        if (labels is None):
+            labels = set(y)
 
-    dst = cv2.dct(x)
-    lossy_dct = dst.copy()
+        i=0        
 
-    threshold = np.percentile(dst, percent) # compute the percentile(s) along a flattened version of the array.
-    for i, element in enumerate(abs(dst)):
-        if element < threshold:
-            lossy_dct[i] = 0
+        for label in labels:
+            if y is None or len(y) == 0:
+                cluster = X
+            else:
+                cluster = X[np.where(y == label)]
+            # print(cluster.shape)
 
-    print ('non-zero elements: ', np.count_nonzero(lossy_dct))
-    lossy_idct = cv2.idct(lossy_dct)
-    print('Compression ratio = ', 100-percent, '%')
-
-    plt.figure(figsize=(9,9))
-
-    plt.subplot(311)
-    plt.plot(x, 'gray')
-    plt.title('original signal')
-    plt.xticks([]), plt.yticks([])
-    
-    plt.subplot(312)
-    plt.plot(abs(lossy_dct),'gray')
-    plt.title('lossy/sparse DCT')
-    plt.xticks([]), plt.yticks([])
-    
-    plt.subplot(313)
-    plt.plot(lossy_idct, 'gray')
-    plt.title('recovered signal (IDCT)')
-    plt.xticks([]), plt.yticks([])
-
-    return lossy_idct
-
-def dft_lossy_signal_compression(x, percent = 99):    
-
-    dst = cv2.dft(x)
-    lossy_dft = dst.copy()
-
-    threshold = np.percentile(dst, percent) # compute the percentile(s) along a flattened version of the array.
-    for i, element in enumerate(abs(dst)):
-        if element < threshold:
-            lossy_dft[i] = 0
-
-    print ('non-zero elements: ', np.count_nonzero(lossy_dft))
-    lossy_idft = cv2.idft(lossy_dft)
-    print('Compression ratio = ', 100-percent, '%')
-
-    plt.figure(figsize=(9,9))
-
-    plt.subplot(311)
-    plt.plot(x, 'gray')
-    plt.title('original signal')
-    plt.xticks([]), plt.yticks([])
-    
-    plt.subplot(312)
-    plt.plot(abs(lossy_dft),'gray')
-    plt.title('lossy/sparse DCT')
-    plt.xticks([]), plt.yticks([])
-    
-    plt.subplot(313)
-    plt.plot(lossy_idft, 'gray')
-    plt.title('recovered signal (IDCT)')
-    plt.xticks([]), plt.yticks([])
-
-    return lossy_idft
-
-def plotComponents2D(X, y, labels = None, use_markers = False, ax=None, legends = None, tags = None):
-    '''
-    This is a copy of qsi.vis.plotComponents2D()
-    '''
-
-    if X.shape[1] < 2:
-        print('ERROR: X MUST HAVE AT LEAST 2 FEATURES/COLUMNS! SKIPPING plotComponents2D().')
-        return
-    
-    # Gray shades can be given as a string encoding a float in the 0-1 range
-    colors = ['0.9', '0.1', 'red', 'blue', 'black','orange','green','cyan','purple','gray']
-    markers = ['o', 's', '^', 'D', 'H', 'o', 's', '^', 'D', 'H', 'o', 's', '^', 'D', 'H', 'o', 's', '^', 'D', 'H']
-
-    if (ax is None):
-        fig, ax = plt.subplots()
+            if use_markers:
+                ax.scatter([cluster[:,0]], [cluster[:,1]], 
+                        s=40, 
+                        marker=markers[i], 
+                        facecolors='none', 
+                        edgecolors=colors[i+3],
+                        label= (str(legends[i]) if legends is not None else ("Y = " + str(label)  + ' (' + str(len(cluster)) + ')')) )
+            else:
+                ax.scatter([cluster[:,0]], [cluster[:,1]], 
+                        s=70, 
+                        facecolors=colors[i],  
+                        label= (str(legends[i]) if legends is not None else ("Y = " + str(label) + ' (' + str(len(cluster)) + ')')), 
+                        edgecolors = 'black', 
+                        alpha = .4) # cmap='tab20'                
+            i=i+1
         
-    if (y is None or len(y) == 0):
-        labels = [0] # only one class
-    if (labels is None):
-        labels = set(y)
+        if (tags is not None):
+            for j,tag in enumerate(tags):
+                ax.annotate(str(tag), (X[j,0] + 0.1, X[j,1] - 0.1))
+            
+        ax.legend()
 
-    i=0        
-
-    for label in labels:
-        if y is None or len(y) == 0:
-            cluster = X
-        else:
-            cluster = X[np.where(y == label)]
-        # print(cluster.shape)
-
-        if use_markers:
-            ax.scatter([cluster[:,0]], [cluster[:,1]], 
-                       s=40, 
-                       marker=markers[i], 
-                       facecolors='none', 
-                       edgecolors=colors[i+3],
-                       label= (str(legends[i]) if legends is not None else ("Y = " + str(label)  + ' (' + str(len(cluster)) + ')')) )
-        else:
-            ax.scatter([cluster[:,0]], [cluster[:,1]], 
-                       s=70, 
-                       facecolors=colors[i],  
-                       label= (str(legends[i]) if legends is not None else ("Y = " + str(label) + ' (' + str(len(cluster)) + ')')), 
-                       edgecolors = 'black', 
-                       alpha = .4) # cmap='tab20'                
-        i=i+1
-    
-    if (tags is not None):
-        for j,tag in enumerate(tags):
-            ax.annotate(str(tag), (X[j,0] + 0.1, X[j,1] - 0.1))
+        ax.axes.xaxis.set_visible(False) 
+        ax.axes.yaxis.set_visible(False)
         
-    ax.legend()
+        return ax
 
-    ax.axes.xaxis.set_visible(False) 
-    ax.axes.yaxis.set_visible(False)
+    print('\n\n===== Ψ = '  + t + ', k =' + str(round(k,2)) + ' ======\n')
+
+    Z = np.zeros(X.shape)
+    Xr = np.zeros(X.shape)
+
+    if display == 'all':
+        b = True
+    elif display == 'none':
+        b = False
     
-    return ax
+    if (k > 1.0): # when k > 1.0, return original signal directly
+        Xr = X 
+        Z = X
+    else:
+        for i in range(X.shape[0]):            
+            x = X[i] # X[i,:].ravel().tolist()[0] # get the i-th sample
 
-############ Below are TVSM functions ##############
+            if display == 'first':
+                b = (i == 0)
 
-import time
+            if b:
+                print('Sample ' + str(i+1))
 
-def Time2Seed(t = None):
+            xr, z = Sensing_n_Recovery(x, k, t, solver = solver, display = b)
+            Z[i,:] = list(z)
+            Xr[i,:]= xr #[:,0]
 
-    '''
-    Parameter
-    ---------
-    t : a timestamp. If unspecified, will use "now".
+    pca = PCA(n_components=None) # n_components == min(n_samples, n_features) - 1. But we will use the first 2 components
+    Z_pca = pca.fit_transform(Z)
+    # plotComponents2D(Z_pca, y, labels, use_markers = False, ax=ax[0])
+    # ax[0].title.set_text('2D-Visualization')
 
-    Return
-    ------
-    Seconds since epoch. Unix and POSIX measure time as the number of seconds that have passed since 1 January 1970 00:00:00 UT, a point in time known as the Unix epoch. The NT time epoch on Windows NT and later refers to the Windows NT system time in (10^-7)s intervals from 0h 1 January 1601.
-    '''
+    pca = PCA(n_components=None)
+    Xr_pca = pca.fit_transform(Xr)
     
-    if t is None:
-        t = time.time()
-    return int(round(t)) # Return the current time in seconds since the Epoch.
+    # For classification problem, continue to analyze with ANOVA and MANOVA
+    if y is None:
 
-def Seed2Time(s):
-    return time.ctime(s)
-
-def print_wavelet_families():
-
-    for family in pywt.families():
-        print("%s family: " % family + ', '.join(pywt.wavelist(family)))
-
-
-############ Below are image-related functions ##############
-
-
-def get_img_data(path):
-
-    img = cv2.imread(path, cv2.IMREAD_GRAYSCALE) # input a square image
-    w,h = img.shape
-    return img.reshape(w*h), w, h # expand to 1D array
-
-def img_dct(path):
-
-    # Second argument is a flag which specifies the way image should be read.
-    #  cv2.IMREAD_COLOR (1) : Loads a color image. Any transparency of image will be neglected. It is the default flag.
-    #  cv2.IMREAD_GRAYSCALE (0) : Loads image in grayscale mode
-    #  cv2.IMREAD_UNCHANGED (-1): Loads image as such including alpha channel
-    img = cv2.imread(path, cv2.IMREAD_GRAYSCALE).astype('float') # input a square image
-    w,h = img.shape
-    # imgdata = img.reshape(1, w*h) # expand to 1D array
-
-    mtx = dctmtx(w, h, True)
-
-    # dctmtx * dctmtx' = E
-
-    E = np.dot(mtx, np.transpose(mtx))
-    plt.imshow(E, cmap=cm.Greys_r)
-    plt.title('DCT @ DCT.T = I')
-    plt.axis('off')
-    plt.show()
-
-    dst = np.dot(mtx , img)
-    dst = np.dot(dst, np.transpose(mtx))
-    dst2 = cv2.dct(img) # Method 2 - using opencv 
-
-    assert np.allclose(dst, dst2)
-
-    # IDCT to reconstruct image
-
-    # Method 1
-    img_r = np.dot(np.transpose(mtx) , dst)
-    img_r = np.dot(img_r, mtx)
-
-    # Method 2 - opencv
-    img_r2 = cv2.idct(dst2)
-
-    plt.figure(figsize=(12,8))
-
-    plt.subplot(231)
-    plt.imshow(img, 'gray')
-    plt.title('original image')
-    plt.xticks([]), plt.yticks([])
-    
-    plt.subplot(232)
-    plt.imshow(np.log(abs(dst)),'gray')
-    plt.title('DCT')
-    plt.xticks([]), plt.yticks([])
-    
-    plt.subplot(233)
-    plt.imshow(img_r, 'gray')
-    plt.title('IDCT')
-    plt.xticks([]), plt.yticks([])
-    
-    plt.subplot(234)
-    plt.imshow(img, 'gray')
-    plt.title('original image')
-    plt.axis('off')
-    
-    plt.subplot(235)
-    plt.imshow(np.log(abs(dst2)),'gray')
-    plt.title('DCT(cv2)')
-    plt.axis('off')
-
-    plt.subplot(236)
-    plt.imshow(img_r2,'gray')
-    plt.title('IDCT(cv2)')
-    plt.axis('off')
-
-    plt.show()
-
-    v = cv2.Laplacian(np.log(abs(dst)), cv2.CV_64F).var() # Blur Detection using the variance of the Laplacian method
-    print('Laplacian var (Blur Detection) of DCT = ', round(v,3) )
-    v2 = cv2.Laplacian(np.log(abs(dst2)), cv2.CV_64F).var() # Blur Detection using the variance of the Laplacian method
-    print('Laplacian var (Blur Detection) of DCT (cv2) = ', round(v2,3) )
-
-
-def img_dft(path):
-
-    img = cv2.imread(path, cv2.IMREAD_GRAYSCALE).astype('float') # input a square image
-    w,h = img.shape
-    s = min(w,h)
-    img = img[:s,:s]
-    print('image cropped to ', str(s), " x ", str(s) )
-    # imgdata = img.reshape(1, s*s) # expand to 1D array
-
-    mtx = dftmtx(s, True)
-
-    E = np.dot(mtx, np.transpose(mtx))
-    plt.imshow(np.abs(E), cmap=cm.Greys_r)
-    plt.title('DFT @ DFT.T = I')
-    plt.axis('off')
-    plt.show()
-
-    dst = np.dot(mtx , img)
-    dst = np.dot(dst, np.transpose(mtx))
-    dst2 = cv2.dft(img) # Method 2 - using opencv 
-
-    # assert np.allclose(dst, dst2)
-
-    # IDCT to reconstruct image
-
-    # Method 1
-    img_r = np.dot(np.transpose(mtx) , dst)
-    img_r = np.abs( np.dot(img_r, mtx) )
-
-    # Method 2 - opencv
-    img_r2 = cv2.idft(dst2)
-
-    plt.figure(figsize=(12,8))
-
-    plt.subplot(231)
-    plt.imshow(img, 'gray')
-    plt.title('original image')
-    plt.xticks([]), plt.yticks([])
-    
-    plt.subplot(232)
-    plt.imshow(np.log(abs(dst)),'gray')
-    plt.title('DFT')
-    plt.xticks([]), plt.yticks([])
-    
-    plt.subplot(233)
-    plt.imshow(img_r, 'gray')
-    plt.title('IDFT')
-    plt.xticks([]), plt.yticks([])
-    
-    plt.subplot(234)
-    plt.imshow(img, 'gray')
-    plt.title('original image')
-    plt.axis('off')
-    
-    plt.subplot(235)
-    plt.imshow(np.log(abs(dst2)),'gray')
-    plt.title('DFT(cv2)')
-    plt.axis('off')
-
-    plt.subplot(236)
-    plt.imshow(img_r2,'gray')
-    plt.title('IFCT(cv2)')
-    plt.axis('off')
-
-    plt.show()
-
-    v = cv2.Laplacian(np.log(abs(dst)), cv2.CV_64F).var() # Blur Detection using the variance of the Laplacian method
-    print('Laplacian var (Blur Detection) of DFT = ', round(v,3) )
-    v2 = cv2.Laplacian(np.log(abs(dst2)), cv2.CV_64F).var() # Blur Detection using the variance of the Laplacian method
-    print('Laplacian var (Blur Detection) of DFT (cv2) = ', round(v2,3) )
-
-def img_dwt(path, wavelet = 'db3', flavor = 1):
-    '''
-    flavor = 1: use pywt dwt2 and idwt2
-    flavor = 2: use wavelet ortho basis matrix
-    '''
-    img = cv2.imread(path, cv2.IMREAD_GRAYSCALE).astype('float') # input a square image
-    w,h = img.shape
-    # imgdata = img.reshape(1, w*h) # expand to 1D array
-
-    if (flavor == 1):
-
-        img_dwt = pywt.dwt2(img, wavelet)
-        img_idwt = pywt.idwt2(img_dwt, wavelet)
-
-        plt.figure(figsize=(9,6))
-
-        plt.subplot(231)
-        plt.imshow(img, 'gray')
-        plt.title('original image')
-        plt.xticks([]), plt.yticks([])
-        
-        plt.subplot(232)
-        plt.imshow(np.log(abs(img_dwt[0])), 'gray')
-        plt.title('DWT LL')
-        plt.xticks([]), plt.yticks([])
-
-        plt.subplot(233)
-        plt.imshow(np.log(abs(img_dwt[1][0])), 'gray')
-        plt.title('DWT LH')
-        plt.xticks([]), plt.yticks([])
-
-        plt.subplot(234)
-        plt.imshow(np.log(abs(img_dwt[1][1])), 'gray')
-        plt.title('DWT HL')
-        plt.xticks([]), plt.yticks([])
-
-        plt.subplot(235)
-        plt.imshow(np.log(abs(img_dwt[1][2])), 'gray')
-        plt.title('DWT HH')
-        plt.xticks([]), plt.yticks([])
-        
-        plt.subplot(236)
-        plt.imshow(img_idwt, 'gray')
-        plt.title('IDWT')
-        plt.xticks([]), plt.yticks([])
-
+        plt.scatter(Xr_pca[:,0], Xr_pca[:,1], s=40, 
+        edgecolors = 'black', alpha = .4)
+        plt.title('2D Visualization')
         plt.show()
 
     else:
 
-        mtx, _ = dwtmtx(w, wavelet, False)
-        mtx_h = mtx.conj().T #np.linalg.pinv(mtx)
-        img_dwt = mtx_h @ img #pywt.dwt2(img, 'db3')
-        img_idwt = mtx @ img_dwt #pywt.idwt2(img_dwt, 'db3')
+        fig, ax = plt.subplots(nrows=1, ncols=4, figsize=(24,4))
 
-        plt.figure(figsize=(9,3))
+        pca = PCA(n_components=None)
+        X_pca = pca.fit_transform(X)
 
-        plt.subplot(131)
-        plt.imshow(img, 'gray')
-        plt.title('original image')
-        plt.xticks([]), plt.yticks([])
+        plotComponents2D(X_pca, y = y, use_markers = False, ax=ax[0]) 
+        ax[0].title.set_text('PCA Visualization (X)')
+
+        plotComponents2D(Xr_pca, y = y, use_markers = False, ax=ax[1]) 
+        ax[1].title.set_text('PCA Visualization (Xr)')
+
+        Xc1s = []
+        Xc2s = []
+        title = ''
+        for c in set(y): 
+            # print(Xr.shape, Z.shape, Xr_pca.shape, Z_pca.shape, y.shape)
+            Xc = Xr_pca[y == c]
+            yc = y[y == c]
+            Xc1s.append(list(np.asarray(Xc[:,0]).reshape(1,-1)[0])) # First PC of Class c
+            Xc2s.append(list(np.asarray(Xc[:,1]).reshape(1,-1)[0])) # Second PC of Class c
+
+        #### ANOVA ####
+
+        ax[2].title.set_text('PC1')
+        ax[2].boxplot(Xc1s, notch=False) # plot 1st PC of all classes
+        f,p= scipy.stats.f_oneway(Xc1s[0], Xc1s[1]) # equal to ttest_ind() in case of 2 groups
+        print("f={},p={}".format(f,p))
+        # dict_anova_p1[idx] = p
         
-        plt.subplot(132)
-        plt.imshow(np.log(abs(img_dwt)), 'gray')
-        plt.title('DWT')
-        plt.xticks([]), plt.yticks([])
+        ax[3].title.set_text('PC2')
+        ax[3].boxplot(Xc2s, notch=False)
+        f,p= scipy.stats.f_oneway(Xc2s[0], Xc2s[1])
+        print("f={},p={}".format(f,p))
         
-        plt.subplot(133)
-        plt.imshow(img_idwt, 'gray')
-        plt.title('IDWT')
-        plt.xticks([]), plt.yticks([])
+        #### MANOVA ####
 
+        df = pd.DataFrame({'PC1':Xr_pca[:,0],'PC2':Xr_pca[:,1],'y':y})
+
+        mv = MANOVA.from_formula('PC1 + PC2 ~ y', data=df) # Intercept is included by default.
+        print(mv.endog_names)
+        print(mv.exog_names)
+        r = mv.mv_test()
+        print(r)
+        #dict_manova_p[idx] = str(r.results['y']['stat']['Pr > F'])
+        
+        #### Classifier ACC
+        from sklearn.model_selection import cross_val_score
+        from sklearn import svm
+        
+        clf = svm.SVC(kernel='linear', C=1)
+        scores = cross_val_score(clf, Xr, y, cv=4)
+        print('SVC ACC: ', scores.mean())      
         plt.show()
-
-        # v = cv2.Laplacian(np.log(abs(img_dwt)), cv2.CV_64F).var()
-        # print('Laplacian var of DWT = ', v)  #nan
-
-
-def dct_lossy_image_compression(path, percent = 99):
-
-    img = cv2.imread(path, cv2.IMREAD_GRAYSCALE).astype('float') # input a square image
-    w,h = img.shape
-    # imgdata = img.reshape(1, w*h) # expand to 1D array
-
-    dst = cv2.dct(img)
-    lossy_dct = dst.copy()
-
-    threshold = np.percentile(dst, percent) # compute the percentile(s) along a flattened version of the array.
-    for (x, y), element in np.ndenumerate(abs(dst)):
-        if element < threshold:
-            lossy_dct[x,y] = 0
-
-    print ('non-zero elements: ', np.count_nonzero(lossy_dct))
-    lossy_idct = cv2.idct(lossy_dct)
-    print('Compression ratio = ', 100-percent, '%')
-
-    plt.figure(figsize=(9,3))
-
-    plt.subplot(131)
-    plt.imshow(img, 'gray')
-    plt.title('original image')
-    plt.xticks([]), plt.yticks([])
     
-    plt.subplot(132)
-    plt.imshow(np.log(abs(lossy_dct)),'gray')
-    plt.title('lossy/sparse DCT')
-    plt.xticks([]), plt.yticks([])
-    
-    plt.subplot(133)
-    plt.imshow(lossy_idct, 'gray')
-    plt.title('IDCT')
-    plt.xticks([]), plt.yticks([])
+        # return scores.mean(), str(r.results['y']['stat']['Pr > F'])
 
-    return lossy_idct
+        #### Mutlivariate KLD
 
-def dft_lossy_image_compression(path, percent = 99):
-
-    img = cv2.imread(path, cv2.IMREAD_GRAYSCALE).astype('float') # input a square image
-    w,h = img.shape
-    # imgdata = img.reshape(1, w*h) # expand to 1D array
-
-    dst = cv2.dft(img)
-    lossy_dft = dst.copy()
-
-    threshold = np.percentile(dst, percent)
-    for (x, y), element in np.ndenumerate(abs(dst)):
-        if element < threshold:
-            lossy_dft[x,y] = 0
-
-    print ('non-zero elements: ', np.count_nonzero(lossy_dft))
-    lossy_idft = cv2.idft(lossy_dft)
-    print('Compression ratio = ', 100-percent, '%')
-
-    plt.figure(figsize=(9,3))
-
-    plt.subplot(131)
-    plt.imshow(img, 'gray')
-    plt.title('original image')
-    plt.xticks([]), plt.yticks([])
-    
-    plt.subplot(132)
-    plt.imshow(np.log(abs(lossy_dft)),'gray')
-    plt.title('lossy/sparse DFT')
-    plt.xticks([]), plt.yticks([])
-    
-    plt.subplot(133)
-    plt.imshow(lossy_idft, 'gray')
-    plt.title('IDFT')
-    plt.xticks([]), plt.yticks([])
-
-    return lossy_idft
-
-
-def Image_Sensing_n_Recovery(path, k = 0.2, alpha = 0.01, t = 'DCT', fast_lasso = False):
-
-    x, w, h = get_img_data(path)
-    z, xr = Sensing_n_Recovery(x, k = k, alpha = alpha, t = t, fast_lasso=fast_lasso)
-
-    img_r = xr.reshape((w,h))
-
-    fig = plt.figure(figsize=(9,3))
-    ax = fig.add_subplot(131)
-    ax.imshow(x.reshape((w,h)), 'gray')
-    ax.axis('off')
-    ax.set_title('original image')
-
-    ax = fig.add_subplot(132)
-    if t == 'IDM':
-        dst = x.reshape((w,h))
-    elif t == 'DCT':
-        dst = cv2.dct(x.reshape((w,h)))
-    else:
-        dst = cv2.dft(x.reshape((w,h)))
-    ax.imshow(np.log(abs(dst)), interpolation='nearest', cmap=cm.Greys_r)
-    ax.axis('off')
-    ax.set_title(t)
-
-    ax = fig.add_subplot(133)
-    ax.imshow(img_r, 'gray')
-    ax.axis('off')
-    ax.set_title('recovered image')
-
-    plt.show()
-
-    return x, z, xr, w, h
-
-############### AUDIO ###############
-def play_wav(path):
-
-    if (not isfile(path)):
-        print(path, 'is not a valid file path')
-        return
-
-    song = AudioSegment.from_wav(path)
-    playback.play(song) # need to install ffmpg
-
-def read_wav(path, ch=None, display=True):
-    rate, data = wavfile.read(path)
-    print('data shape: ', data.shape)
-    print("channels:", data.shape[1])    
-    length = data.shape[0] / rate
-    print('length:',length)
-    print('sampling rate:', rate)
-    
-    if display == True:
-        OFFSET = data.max()*1.5
-        time = np.linspace(0., length, data.shape[0])
-        plt.figure(figsize = (12,6))
-        for c in range(data.shape[1]):
-            plt.plot(time, data[:, c] + OFFSET*c, label="channel "+str(c), alpha=0.3)
-        plt.legend()
-        plt.xlabel("Time [s]")
-        plt.ylabel("Amplitude")
-        plt.show()
-
-    if not ch:
-        return data, rate
+        n_comp = 2
+        print('\n ------ Class-wise Multivarate KLD on ' + str(n_comp) + ' PCA components -----')
         
-    if not (ch >= 0 and ch < data.shape[1]):
-        raise ValueError('ch is invalid. should be an integer within [0,nchannels)')
-    
-    return data[:, ch], rate
-
-def frequency_spectrum(x, sf):
-    """
-    Derive frequency spectrum of a signal from time domain
-
-    Parameters
-    ----------
-    ch : channel signal
-    sr : sampling frequency
-
-    Return
-    ------
-    Frequencies and their content distribution
-    """
-    x = x - np.average(x)  # zero-centering
-
-    n = len(x)
-    k = np.arange(n)
-    tarr = n / float(sf)
-    frqarr = k / float(tarr)  # two sides frequency range
-
-    frqarr = frqarr[range(n // 2)]  # one side frequency range
-
-    x = fft(x) / n  # fft computing and normalization
-    x = x[range(n // 2)]
-
-    return frqarr, abs(x)
-
-def analyze_signal(ch, sr, frange = 1.0):
-    """
-    Analyze the channel signal
-
-    Parameters
-    ----------
-    ch : channel signal
-    sr : sampling frequency
-    """
-
-    y = ch  # use the first channel (or take their average, alternatively)
-    print(y.shape)
-    t = np.arange(len(y)) / float(sr)
-
-    plt.figure(figsize=(12,12))
-    plt.subplot(3, 1, 1)
-    plt.plot(t, y, alpha=0.3)
-    plt.xlabel('time (s)')
-    plt.ylabel('signal')
-
-    frq, X = frequency_spectrum(y, sr)
-
-    plt.subplot(3, 1, 2)
-    ub = math.floor(len(frq)*frange)
-    plt.plot(frq[:ub], X[:ub], alpha=0.3)
-    plt.xlabel('freq (Hz)')
-    plt.ylabel('|FFT|')
-
-    plt.subplot(3, 1, 3)
-    fourier = fft(y)
-    FFT = abs(fourier)
-    freq = np.fft.fftfreq(len(y), d=1/sr) # d - Sample spacing (inverse of the sampling rate). Defaults to 1.
-    plt.plot(freq, FFT, alpha=0.3)
-    plt.xlabel('freq (Hz)')
-    plt.ylabel('|FFT| two-sided')
-
-    plt.tight_layout()
-
-    plt.show()
-
-def analyze_wav(path, frange = 1.0):
-    """
-    :param path: wave file path
-    :param frange: the first frange percentage to be shown in the spectrum plot
-    """
-    if (not isfile(path)):
-        print(path, 'is not a valid file path')
-        return
-    
-    data, rate = read_wav(path)
-
-    for i in range(data.shape[1]):
-        print('--- CH' + str(i) + ' ---')
-        analyze_signal(data[:, i], rate, frange)
+        dists = []
         
-    return data, rate
+        for XPCA in [ X_pca[:,:n_comp], Xr_pca[:,:n_comp] ]:
 
-def save_wav(path, y, rate = 48000, play = False):
-    '''
-    Parameters
-    ----------
-    play : whether play the sound file after saving
-    '''
+            dist = {}
 
-    wavfile.write(path, rate=rate, data = y.astype(np.int16))
-    
-    if play:
-        play_wav(path)
-
-def split_wav(path, cut_length = 1):
-        '''
-        Split a wav file to n pieces.
-
-        path : input wav file path
-        cut_length : time length in second
-        '''
-
-        f = wave.open(path, 'rb')
-        params = f.getparams() #读取音频文件信息
-        nchannels, sampwidth, framerate, nframes = params[:4]  #声道数, 量化位数, 采样频率, 采样点数   
-        str_data = f.readframes(nframes)
-        f.close()
-        wave_data = np.frombuffer(str_data, dtype=np.short)
-        #根据声道数对音频进行转换
-        if nchannels > 1:
-                wave_data.shape = -1, 2
-                wave_data = wave_data.T
-                temp_data = wave_data.T
-        else:
-                wave_data = wave_data.T
-                temp_data = wave_data.T
-
-        CutFrameNum = framerate * cut_length  
-        Cutnum =nframes/CutFrameNum  #音频片段数
-        StepNum = int(CutFrameNum)
-        StepTotalNum = 0
-   
-        for j in range(int(Cutnum)):
-            FileName = path + "-" + str(j) + ".wav" 
-            temp_dataTemp = temp_data[StepNum * (j):StepNum * (j + 1)]
-            StepTotalNum = (j + 1) * StepNum
-            temp_dataTemp.shape = 1, -1
-            temp_dataTemp = temp_dataTemp.astype(np.short)# 打开WAV文档
-            f = wave.open(FileName, 'wb')
-            # 配置声道数、量化位数和取样频率
-            f.setnchannels(nchannels)
-            f.setsampwidth(sampwidth)
-            f.setframerate(framerate)
-            f.writeframes(temp_dataTemp.tostring())  # 将wav_data转换为二进制数据写入文件
-            f.close()
+            for c in set(y):    
+                Xc = XPCA[y == c]
+                yc = y[y == c]
+                
+                # np.cov()
+                # ddof=1 will return the unbiased estimate, even if both fweights and aweights are specified, and ddof=0 will return the simple average. 
+                # There is exactly 1 difference between np.cov(X) and np.cov(X, ddof=0) which is the bias step. With ddof=1 the dot is divided by 2 (X.shape[1] - 1), while with ddof=0 the dot is divided by 3 (X.shape[1] - 0).
+                dist[c] = ( Xc.mean(axis = 0), np.cov(Xc, rowvar = False) )
             
-split_wav("cicada.wav",1)
+            dists.append(dist)
+
+
+        for c in set(y):
+
+            mkld = Multivarate_KLD(dists[0][c], dists[1][c])
+            print('Multivarate KLD between the orignal and reconstructed signals ( y = ' + str(c) +  '): ', round(mkld,3))
+    
+        print('\n ------ Class-wise Multivarate KLD on LDA component -----')
+        
+        X_lda = LinearDiscriminantAnalysis().fit_transform(X,y)[:,0].flatten()
+        Xr_lda = LinearDiscriminantAnalysis().fit_transform(Xr,y)[:,0].flatten()
+
+        for c in set(y):    
+            Xc1 = X_lda[y == c]
+            Xc2 = Xr_lda[y == c]
+
+        ukld = Univariate_KLD( (Xc1.mean(), Xc1.std()),  (Xc2.mean(), Xc2.std()) )
+        print('KLD between the orignal and reconstructed signals ( y = ' + str(c) +  '): ', round(ukld,3))
+    
+    return Z, Xr
