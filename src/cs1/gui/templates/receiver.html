@@ -1,0 +1,545 @@
+@using System.App.Model.Consts
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta charset="utf-8" />
+    <title>receiver</title>
+    <link rel="stylesheet" href="/static/bootstrap.css">
+    <link rel="stylesheet" href="/static/jquery-ui.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.2.0/css/fontawesome.min.css">
+    <script src="/static/jquery-3.3.1.min.js"></script>
+    <script src="/static/bootstrap.js"></script>
+    <script src="/static/jquery.blockUI.js"></script>
+    <script src="/static/jquery.form.min.js"></script>
+    <script src="https://code.highcharts.com/highcharts.js"></script>
+    <script src="/static/utility.chart.js"></script>
+    <script src="/static/seedrandom.js"></script>
+
+    <script>
+        var t = {{ ViewBag['Timestamp'] }};
+        var s = secondSinceEpoch(t);
+        var xarray = JSON.parse('@ViewBag.XArray');
+        var n = xarray.length;
+        var xs = JSON.parse('@ViewBag.Xs');
+        var k = @ViewBag.k;
+    
+        $(function () {
+    
+            $('#sampling_ratio').val(Math.round(k * 100));
+            $('#k_label').html($('#sampling_ratio').val() + '%');
+            $('#seed').val(s);
+            $('#xs_badge').html(xs.length + ' points');
+            $('#xs').text('@ViewBag.Xs');
+    
+            // generate PHI at server side
+            var sm_indices = Array.from(Array(n).keys());
+            sm_indices = shuffle(sm_indices, s).slice(0, xs.length);
+    
+            $('#sm_indices').text(sm_indices);
+            $('#sm_info').val('Dimensionality: ' + sm_indices.length + ' × ' + n);
+    
+            $("#dialog_transforms").dialog({
+                autoOpen: false,
+                height: 650,
+                width: 800,
+                modal: true,
+                //buttons: {
+                //    Close: {
+                //        text: 'Close',
+                //        class: 'btn btn-default btn-outline-secondary',
+                //        click: function () {
+                //            $(this).dialog("close");
+                //        }
+                //    }
+                //}
+            });
+    
+            $("#dialog_TVSMG").dialog({
+                autoOpen: false,
+                height: 650,
+                width: 1000,
+                modal: true,
+                //buttons: {
+                //    Close: {
+                //        text: 'Close',
+                //        class: 'btn btn-default btn-outline-secondary',
+                //        click: function() {
+                //            $(this).dialog("close");
+                //        }
+                //    }
+                //}
+            });
+        });
+    
+        function secondSinceEpoch(t) {
+            return Math.round(t.getTime() / 1000);
+        }
+    
+        // define the de-facto unbiased shuffle algorithm, i.e., Fisher-Yates (aka Knuth) Shuffle.
+        function shuffle(array, seed) {
+            var currentIndex = array.length, temporaryValue, randomIndex;
+    
+            Math.seedrandom(seed);
+    
+            // While there remain elements to shuffle...
+            while (0 !== currentIndex) {
+    
+                // Pick a remaining element...
+                randomIndex = Math.floor(Math.random() * currentIndex);
+                currentIndex -= 1;
+    
+                // And swap it with the current element.
+                temporaryValue = array[currentIndex];
+                array[currentIndex] = array[randomIndex];
+                array[randomIndex] = temporaryValue;
+            }
+    
+            return array;
+        }
+    
+        function getRandomInt(min, max) {
+            min = Math.ceil(min);
+            max = Math.floor(max);
+            return Math.floor(Math.random() * (max - min) + min); //The maximum is exclusive and the minimum is inclusive
+        }
+    
+        function scramble_sm() {
+            s = getRandomInt(0, 100); // use a random int as the PRNG seed
+            console.log(s);
+            console.log(xs.length);
+    
+            sm_indices = shuffle(
+                Array.from(Array(n).keys())
+                , s).slice(0, xs.length);        
+            $('#sm_indices').text(sm_indices);
+        }
+    
+        function reconstruct() {
+    
+            $.blockUI({ message: '<h4>' + 'Processing' + '</h4>', fadeIn: 0 });
+    
+            $.post('@Url.Action("Reconstruct", "CS")',
+                {
+                    phi: $('#sm_indices').text(),
+                    xs: $('#xs').text(),
+                    psi: $('#psi').val(),
+                    n: n,
+                },
+                function(data, status){
+    
+                    var obj = JSON.parse(data);
+                    createSpectrumChart('chart_z',
+                        obj['z'],
+                        'Signal in Latent Space (z)',
+                        '',
+                        '',
+                        '',
+                        $('#psi').val(),
+                        '');
+                    var xr = [[]];
+                    for (var i = 0; i < xarray.length; i++) {
+                        xr[i] = [];
+                        xr[i][0] = xarray[i];
+                        xr[i][1] = obj['xr'][i][0]; 
+                    }
+                    createSpectrumChart('chart_xr',
+                        xr,
+                        'Reconstructed Signal (xr)',
+                        '@ViewBag.Timestamp',
+                        '@ViewBag.XAxisUnit',
+                        '',
+                        '@ViewBag.XAxisMeaning');
+                    // $('#output').text(obj['z']);
+    
+                    $.unblockUI();
+                    
+                })
+                .fail(function (data) {
+                      $.unblockUI();
+                      alert(data['status'] + "\n\n" + data['responseText']);
+                  });
+            }
+    
+        function save_data() {
+            // save timestamp, seed, n, idx, xs
+            var dict = new Object();
+            dict['timestamp'] = $('#timestamp_badge').text();
+            dict['xs'] = $('#xs').text();
+            var s = JSON.stringify(dict);
+            download(dict['timestamp'], s);
+        }
+    
+        function download(filename, text) {
+            var element = document.createElement('a');
+            element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(text));
+            element.setAttribute('download', filename);
+    
+            element.style.display = 'none';
+            document.body.appendChild(element);
+            element.click();
+            document.body.removeChild(element);
+        }
+    </script>
+    
+    <style>
+    
+        img {
+            max-width: 100%;
+            max-height: 100%;
+        }
+    
+        .checkbox-round {
+            width: 1.2em;
+            height: 1.2em;
+            background-color: #eee;
+            border-radius: 50%;
+            vertical-align: middle;
+            border: 1px solid #222;
+            -webkit-appearance: none;
+            outline: none;
+            cursor: pointer;
+        }
+    
+        .checkbox-round:checked {
+            background-color: darkslategray;
+        }
+    
+        .slider {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 15px;
+            border-radius: 5px;
+            background: #d3d3d3;
+            outline: none;
+            opacity: 0.7;
+            -webkit-transition: .2s;
+            transition: opacity .2s;
+        }
+    
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            background:grey;
+            cursor: pointer;
+        }
+    
+        .slider::-moz-range-thumb {
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            background: grey;
+            cursor: pointer;
+        }
+    
+        #dialog_transforms td {
+            text-align: center;
+            vertical-align: middle;
+        }
+    
+        #dialog_transforms tr {
+            text-align: center;
+            vertical-align: middle;
+        }
+            
+        footer{
+            display: none;
+        }
+
+        .bg-rainbow {
+            background-image: linear-gradient(to right, #FF000080,#FFFF0080, #00FF0080, #00FFFF80,#0000FF80,#FF00FF80);
+            /*opacity: 0.7;
+            text-align: center;*/
+            color: #404040;
+            text-shadow: 8px 8px 15px #fff;
+        }
+
+        .bg-gray {
+            background-color: dimgray;
+            color: whitesmoke;
+        }
+
+        table.break_word td, table.break_word tr, pre.break_word {
+            word-break: break-word;
+            overflow-wrap: break-word;
+            white-space: pre-wrap;
+        }
+
+        .nav-tabs {
+            background-color: #2bbbad;
+            font: 120%;
+        }
+
+        .nav-tabs > li.nav-item {
+            padding-left: 15px;
+            padding-top: 15px;
+            padding-bottom: 15px;
+        }
+
+        .nav-tabs > li.nav-item > a.nav-link {
+            color: #eee;
+            border: none;
+        }
+
+        .nav-tabs > li.nav-item > a.nav-link.active {
+            background-color: #22968a;
+        }
+
+        .nav-tabs > li.nav-item > a.nav-link:hover {
+            background-color: #22968a;
+        }
+
+        .tab-pane {
+            padding: 1.5em;
+        }
+
+        .tab-pane img {
+            max-width: 100%;
+            text-align: center;
+        }
+
+        .tab-pane pre, .tab-pane p {
+            font-size: 110%;
+        }
+    </style>
+
+</head>
+<body>
+    <nav class="navbar navbar-expand-md bg-gray navbar-dark sticky-top">
+        <div class="container-fluid">
+
+            <a class="navbar-brand text-center" role="banner" href="@Url.Action("Index","CS")">
+                <span class="fa fa-codepen" style="font-size:180%; color: white"></span>
+                <span style="color:lightgrey;" title="Secured Signal Sensing">S3</span>
+            </a>
+
+            <div class="navbar">
+                <ul class="navbar-nav ml-auto text-center">
+                    @Html.Partial("_CulturePartialBs4")
+                </ul>
+            </div>
+
+        </div>
+    </nav>
+
+    <div class="container-fluid  px-lg-5 px-md-3 px-sm-0" style="padding-bottom: 60px;">
+        @RenderBody()
+    </div>
+</body>
+</html>
+
+
+
+
+
+<div>
+    <br />
+    <div class="row">
+        <div class="col-lg-3 col-sm-12">
+            <div class="card">
+                <h5 class="card-header">
+                    Bob <span class="badge badge-pill badge-secondary">receiver side</span>
+                </h5>
+                <div class="card-body">
+                    <h6>
+                        Sampling Ratio <span class="font-italic font-weight-bold">k</span>
+                        <span id="k_label" class="badge badge-pill badge-secondary">10%</span>
+                    </h6>
+                    <div class="row">
+                        <input title="Receiver cannot change the sampling ratio. Must use sender's value." disabled="disabled" type="range" min="1" max="100" value="10" class="slider" oninput="$('#k_label').html(this.value + '%');" id="sampling_ratio">
+                    </div>
+                    <br />
+                    <h6>
+                        Transform Basis  <span class="font-italic font-weight-bold">Ψ</span>
+                        <span style="cursor: pointer;" class="fa fa-info-circle" onclick="$('#dialog_transforms').dialog('open'); $(':focus').blur();"></span>
+                    </h6>
+
+                    <select id="psi" class="form-control">
+                        <optgroup label="Choose a transform under which the signal is sparse">
+                            <option value="idm" style="background-image:url(/Assets/CS/IDM.png);">IDM (Identity Matrix)</option>
+                            <option value="dct" selected="selected" style="background-image:url(/Assets/CS/DCT.png);">DCT (Discrete Cosine Transform)</option>
+                            <option value="dft" style="background-image:url(/Assets/CS/DFT.png);">DFT (Discrete Fourier Transform)</option>
+                            @*<option value="hwt" style="background-image:url(/Assets/CS/HWT.png);">HWT (Hadamard Walsh Transform) </option>*@
+                        </optgroup>
+                    </select>
+                </div>
+            </div>
+
+            <div id="sensing_matrix" class="card">
+                <h5 class="card-header">Received Data</h5>
+                <div class="card-body">
+                    <h6>
+                        Sender-side Timestamp
+                        <span id="timestamp_badge" class="badge badge-pill badge-secondary">@ViewBag.Timestamp</span>
+                    </h6>
+                    <h5>
+                        <span class="font-italic font-weight-bold">xs</span>
+                        <span id="xs_badge" class="badge badge-pill badge-secondary"></span>
+                        <span id="save_data" onclick="save_data();" style="cursor:pointer"
+                              class="fa fa-download"></span>
+                    </h5>
+                    <textarea id="xs" rows="5" class="form-control"></textarea>
+                </div>
+    
+                <br/>
+
+                <div class="card-body">
+                    <div class="btn-group">
+                        <button onclick="$('#dialog_TVSMG').dialog('open'); $(':focus').blur();"
+                                class="btn btn-default btn-outline-dark">
+                            Restore Sensing Matrix
+                        </button>
+                        <button onclick="reconstruct();"
+                                class="btn btn-default btn-outline-dark">
+                            Reconstruct Signal
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6 col-sm-12">
+            <div class="card">
+                <h5 class="card-header">Reconstruct Signal</h5>
+                <div class="card-body">
+                    <div id="chart_z" style="height: 300px;"></div>                    
+                    <br/>
+                    <div id="chart_xr"></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-sm-12">
+            <div class="card">
+                <h5 class="card-header">Instructions</h5>
+                <div class="card-body" id="div_instruction">
+                    <table class="table table-light">
+                        <thead>
+                            <tr>
+                                <th>Step</th>
+                                <th>Comment</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{
+                                int j = 1;
+                                <tr>
+                                    <td>
+                                        @(j++). Receive Data
+                                    </td>
+                                    <td>
+                                        After the page finished loading, make sure the data (i.e., xs, timestamp) from sender side are shown correctly.
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>@(j++). Regenerate the sensing matrix</td>
+                                    <td>
+                                        With the received timestamp, generate the sensing matrix by the server-side TVSMG instance. 
+                                        <br/>
+                                        The generated sensing matrix should be the same as the one used by the sender side.
+                                        <br/>
+                                        To verify the security of this system, you are also allowed to <a href="#" onclick="$('#dialog_TVSMG').dialog('open'); $(':focus').blur();">tamper with the sensing matrix</a>. 
+                                        With a changed sensing matrix, you can not reconstruct the signal. 
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td>@(j++). Reconstruct signal</td>
+                                    <td>
+                                        Call the python module that uses L1-norm minimization to reconstruct the original signal.
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+
+
+
+<div id="dialog_TVSMG" title="Time-Variant Sensing Matrix Generator (Receiver-side)">
+
+    @*<span id="current_time"></span>*@
+    <div class="container">
+        <div class="form-group">
+            <label for="timestamp_tvsmg">Timestamp:</label>
+            <input type="text" id="timestamp_tvsmg" class="form-control" value="@ViewBag.Timestamp"/>
+        </div>
+        <div class="form-group">
+            <label for="seed">PRNG Seed:</label>
+            <input type="text" id="seed" class="form-control" />
+        </div>
+        <div class="form-group">
+            <label for="sm_indices">Sensing Indices:</label>
+            <textarea id="sm_indices" rows="6" class="form-control"></textarea>
+            <div class="font-italic px-4 font-weight-bold">
+                * You may manually change the sensing matrix, or randomly
+                <button class="btn btn-outline-dark" onclick="scramble_sm();">generate</button> a new sensing matrix.
+                <br/>
+                * By this demo, you will see that with a changed sensing matrix, you cannot reconstruct the original signal. 
+            </div>
+        </div>
+        <div class="form-group">
+            <label for="sm_info">Sensing Matrix:</label>
+            <input type="text" id="sm_info" class="form-control" />
+        </div>
+    </div>
+</div>
+
+
+<div id="dialog_transforms" title="Transform Basis Ψ (used in signal reconstruction)">
+    <table class="table table-hover">
+        <tr>
+            <th>Transform</th>
+            <th>Visualization</th>
+            <th>
+                Mutual Coherence
+                <br />
+                (with Sensing Matrix)
+            </th>
+            <th></th>
+        </tr>
+        <tr>
+            <td>IDM (Identity Matrix)</tdvalign="bottom>
+            <td>
+                <img height="100" src="~/Assets/CS/IDM.png" />
+            </td>
+            <td>
+                <math><msqrt><mi>n</mi></msqrt></math>
+            </td>
+            <td></td>
+        </tr>
+        <tr>
+            <td>DCT (Discrete Cosine Transform)</td>
+            <td>
+                <img height="100" src="~/Assets/CS/DCT.png" />
+            </td>
+            <td>1</td>
+            <td></td>
+        </tr>
+        <tr>
+            <td>DFT (Discrete Fourier Transform)</td>
+            <td>
+                <img height="100" width="200" src="~/Assets/CS/DFT.png" />
+            </td>
+            <td>
+                <math><msqrt><mi>2</mi></msqrt></math>
+            </td>
+            <td></td>
+        </tr>
+        <tr>
+            <td>HWT (Hadamard Walsh Transform)</td>
+            <td>
+                <img height="100" src="~/Assets/CS/HWT.png" />
+            </td>
+            <td>1</td>
+            <td></td>
+        </tr>
+    </table>
+</div>

@@ -3,7 +3,16 @@ import math
 import pylab
 import matplotlib
 import matplotlib.pyplot as plt
-from . import PSI_LONGNAMES, PSI_MC, PSI_NAMES, GetSensingMatrix
+import os
+import sys
+
+if __package__:
+    from . import PSI_LONGNAMES, PSI_MC, PSI_NAMES, GetSensingMatrix
+else:
+    DIR = os.path.dirname(__file__) # cs1 dir
+    if DIR not in sys.path:
+        sys.path.append(DIR)        
+    from __init__ import PSI_LONGNAMES, PSI_MC, PSI_NAMES, GetSensingMatrix
 
 def mutual_coherence(A,B):
     '''

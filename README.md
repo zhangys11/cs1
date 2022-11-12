@@ -5,25 +5,30 @@ Compressed Sensing library for 1D Spectroscopic Profiling Data
 <table>
     <tbody>
         <tr>
+            <td>package</td>
             <td>module</td>
             <td>sub-module</td>
             <td>description</td>
         </tr>
         <tr>
-            <td rowspan = 2>cs1.basis</td>
-            <td>cs1.basis.common</td>
-            <td>commonly used non-adaptive CS transform bases</td>
-        </tr>
-        <tr>
-            <td>cs1.basis.adaptive</td>
-            <td>adaptive CS transform bases, e.g., LDA (linear discriminant analysis)-based, EBP (eigenvector-based projection)</td>
+            <td rowspan=9>cs1</td>
         </tr>
         <tr>
             <td colspan = 2>cs1.cs</td>
             <td>basic functions for CS sensing, recovery, hyper-parameter grid-search, etc.</td>
         </tr>
         <tr>
-            <td colspan = 2>cs1.metrics</td>
+            <td rowspan = 2>cs1.basis</td>
+            <td>cs1.basis.common</td>
+            <td>commonly used non-adaptive CS transform bases[1]</td>
+        </tr>
+        <tr>
+            <td>cs1.basis.adaptive</td>
+            <td>adaptive CS transform bases, e.g., LDA (linear discriminant analysis)-based, EBP (eigenvector-based projection)[2]</td>
+        </tr>
+        <tr>
+            <td colspan = 2
+            >cs1.metrics</td>
             <td>CS-related metrics, e.g., mutual coherence, sparsity, MSE, KLD</td>
         </tr>
         <tr>
@@ -40,9 +45,16 @@ Compressed Sensing library for 1D Spectroscopic Profiling Data
             <td>cs1.domain.image</td>
             <td>contains functions for image processing. e.g., image CS, lossy compression</td>
         </tr>
+        <tr>
+            <td colspan = 2>cs1.gui</td>
+            <td>provides a web-based playground for researchers. users can try different CS bases and sampling ratios</td>
+        </tr>
     </tbody>
 </table>
 
+Publications:   
+[1] Adaptive compressed sensing of Raman spectroscopic profiling data for discriminative tasks [J]. Talanta, 2020, doi: 10.1016/j.talanta.2019.120681   
+[2]  Task-adaptive eigenvector-based projection (EBP) transform for compressed sensing: A case study of spectroscopic profiling sensor [J]. Analytical Science Advances. Chemistry Europe, 2021, doi: 10.1002/ansa.202100018
 
 # Installation
 
