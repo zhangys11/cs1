@@ -1,13 +1,12 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <input id="viewbag" type="hidden" class="hidden">{{ ViewBag }}</input>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
     <meta charset="utf-8" />
     <title>receiver</title>
     <link rel="stylesheet" href="/static/bootstrap.css">
     <link rel="stylesheet" href="/static/jquery-ui.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.2.0/css/fontawesome.min.css">
+    <link rel="stylesheet" href="/static/font-awesome.css">
     <script src="/static/jquery-3.3.1.min.js"></script>
     <script src="/static/bootstrap.js"></script>
     <script src="/static/jquery.blockUI.js"></script>
@@ -16,31 +15,34 @@
     <script src="/static/utility.chart.js"></script>
     <script src="/static/seedrandom.js"></script>
 
-    <script>
-        alert($('#viewbag').text());
-        var dic = JSON.parse($('#viewbag').text());
-        var t = dic.timestamp;
-        var s = secondSinceEpoch(t);
-        var xarray = JSON.parse(dic.XArray); // '{{ViewBag["XArray"]}}'
-        var n = xarray.length;
-        var xs = JSON.parse(dic.xs); // '{{ViewBag["xs"]}}'
-        var k = dic.k; //<text>{{ ViewBag["k"] }}</text>;
-    
+    <script>        
         $(function () {
-    
+
+            // research later: how to receive {{ViewBag}} to dic in js. 
+            // we currently get viewbag from a hidden tag.
+            console.log($('#viewbag').val());
+            var dic = JSON.parse($('#viewbag').val()); // TODO: parse error
+            
+            var t = dic['timestamp'];
+            var s = secondSinceEpoch(t);
+            var xarray = JSON.parse(dic['XArray']); // '{{ViewBag["XArray"]}}'
+            var n = xarray.length;
+            var xs = JSON.parse(dic['xs']); // '{{ViewBag["xs"]}}'
+            var k = dic['k']; //<text>{{ ViewBag["k"] }}</text>;
+
+            alert(dic);
             $('#sampling_ratio').val(Math.round(k * 100));
             $('#k_label').html($('#sampling_ratio').val() + '%');
             $('#seed').val(s);
             $('#xs_badge').html(xs.length + ' points');
-            $('#xs').text(dic.xs); // '{{ ViewBag["xs"] }} '
-    
+            
             // generate PHI at server side
             var sm_indices = Array.from(Array(n).keys());
             sm_indices = shuffle(sm_indices, s).slice(0, xs.length);
-    
+
             $('#sm_indices').text(sm_indices);
             $('#sm_info').val('Dimensionality: ' + sm_indices.length + ' × ' + n);
-    
+
             $("#dialog_transforms").dialog({
                 autoOpen: false,
                 height: 650,
@@ -56,7 +58,7 @@
                 //    }
                 //}
             });
-    
+
             $("#dialog_TVSMG").dialog({
                 autoOpen: false,
                 height: 650,
@@ -73,54 +75,54 @@
                 //}
             });
         });
-    
+
         function secondSinceEpoch(t) {
             return Math.round(t.getTime() / 1000);
         }
-    
+
         // define the de-facto unbiased shuffle algorithm, i.e., Fisher-Yates (aka Knuth) Shuffle.
         function shuffle(array, seed) {
             var currentIndex = array.length, temporaryValue, randomIndex;
-    
+
             Math.seedrandom(seed);
-    
+
             // While there remain elements to shuffle...
             while (0 !== currentIndex) {
-    
+
                 // Pick a remaining element...
                 randomIndex = Math.floor(Math.random() * currentIndex);
                 currentIndex -= 1;
-    
+
                 // And swap it with the current element.
                 temporaryValue = array[currentIndex];
                 array[currentIndex] = array[randomIndex];
                 array[randomIndex] = temporaryValue;
             }
-    
+
             return array;
         }
-    
+
         function getRandomInt(min, max) {
             min = Math.ceil(min);
             max = Math.floor(max);
             return Math.floor(Math.random() * (max - min) + min); //The maximum is exclusive and the minimum is inclusive
         }
-    
+
         function scramble_sm() {
             s = getRandomInt(0, 100); // use a random int as the PRNG seed
             console.log(s);
             console.log(xs.length);
-    
+
             sm_indices = shuffle(
                 Array.from(Array(n).keys())
-                , s).slice(0, xs.length);        
+                , s).slice(0, xs.length);
             $('#sm_indices').text(sm_indices);
         }
-    
+
         function reconstruct() {
-    
+
             $.blockUI({ message: '<h4>' + 'Processing' + '</h4>', fadeIn: 0 });
-    
+
             $.post('/reconstruct',
                 {
                     phi: $('#sm_indices').text(),
@@ -128,8 +130,8 @@
                     psi: $('#psi').val(),
                     n: n,
                 },
-                function(data, status){
-    
+                function (data, status) {
+
                     var obj = JSON.parse(data);
                     createSpectrumChart('chart_z',
                         obj['z'],
@@ -143,26 +145,26 @@
                     for (var i = 0; i < xarray.length; i++) {
                         xr[i] = [];
                         xr[i][0] = xarray[i];
-                        xr[i][1] = obj['xr'][i][0]; 
+                        xr[i][1] = obj['xr'][i][0];
                     }
                     createSpectrumChart('chart_xr',
                         xr,
                         'Reconstructed Signal (xr)',
-                        dic.timestamp, //'{{ViewBag["timestamp"]}}',
-                        dic.XAisUnit, //'{{ViewBag["XAxisUnit"]}}',
+                        timestamp, //'{{ViewBag["timestamp"]}}',
+                        dic['XAisUnit'], //'{{ViewBag["XAxisUnit"]}}',
                         '',
-                        dic.XAsisMeaning); //'{{ViewBag["XAxisMeaning"]}}');
+                        dic['XAsisMeaning']); //'{{ViewBag["XAxisMeaning"]}}');
                     // $('#output').text(obj['z']);
-    
+
                     $.unblockUI();
-                    
+
                 })
                 .fail(function (data) {
-                      $.unblockUI();
-                      alert(data['status'] + "\n\n" + data['responseText']);
-                  });
-            }
-    
+                    $.unblockUI();
+                    alert(data['status'] + "\n\n" + data['responseText']);
+                });
+        }
+
         function save_data() {
             // save timestamp, seed, n, idx, xs
             var dict = new Object();
@@ -171,26 +173,25 @@
             var s = JSON.stringify(dict);
             download(dict['timestamp'], s);
         }
-    
+
         function download(filename, text) {
             var element = document.createElement('a');
             element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(text));
             element.setAttribute('download', filename);
-    
+
             element.style.display = 'none';
             document.body.appendChild(element);
             element.click();
             document.body.removeChild(element);
         }
     </script>
-    
+
     <style>
-    
         img {
             max-width: 100%;
             max-height: 100%;
         }
-    
+
         .checkbox-round {
             width: 1.2em;
             height: 1.2em;
@@ -202,11 +203,11 @@
             outline: none;
             cursor: pointer;
         }
-    
+
         .checkbox-round:checked {
             background-color: darkslategray;
         }
-    
+
         .slider {
             -webkit-appearance: none;
             width: 100%;
@@ -218,17 +219,17 @@
             -webkit-transition: .2s;
             transition: opacity .2s;
         }
-    
+
         .slider::-webkit-slider-thumb {
             -webkit-appearance: none;
             appearance: none;
             width: 25px;
             height: 25px;
             border-radius: 50%;
-            background:grey;
+            background: grey;
             cursor: pointer;
         }
-    
+
         .slider::-moz-range-thumb {
             width: 25px;
             height: 25px;
@@ -236,23 +237,23 @@
             background: grey;
             cursor: pointer;
         }
-    
+
         #dialog_transforms td {
             text-align: center;
             vertical-align: middle;
         }
-    
+
         #dialog_transforms tr {
             text-align: center;
             vertical-align: middle;
         }
-            
-        footer{
+
+        footer {
             display: none;
         }
 
         .bg-rainbow {
-            background-image: linear-gradient(to right, #FF000080,#FFFF0080, #00FF0080, #00FFFF80,#0000FF80,#FF00FF80);
+            background-image: linear-gradient(to right, #FF000080, #FFFF0080, #00FF0080, #00FFFF80, #0000FF80, #FF00FF80);
             /*opacity: 0.7;
             text-align: center;*/
             color: #404040;
@@ -264,7 +265,9 @@
             color: whitesmoke;
         }
 
-        table.break_word td, table.break_word tr, pre.break_word {
+        table.break_word td,
+        table.break_word tr,
+        pre.break_word {
             word-break: break-word;
             overflow-wrap: break-word;
             white-space: pre-wrap;
@@ -275,22 +278,22 @@
             font: 120%;
         }
 
-        .nav-tabs > li.nav-item {
+        .nav-tabs>li.nav-item {
             padding-left: 15px;
             padding-top: 15px;
             padding-bottom: 15px;
         }
 
-        .nav-tabs > li.nav-item > a.nav-link {
+        .nav-tabs>li.nav-item>a.nav-link {
             color: #eee;
             border: none;
         }
 
-        .nav-tabs > li.nav-item > a.nav-link.active {
+        .nav-tabs>li.nav-item>a.nav-link.active {
             background-color: #22968a;
         }
 
-        .nav-tabs > li.nav-item > a.nav-link:hover {
+        .nav-tabs>li.nav-item>a.nav-link:hover {
             background-color: #22968a;
         }
 
@@ -303,12 +306,14 @@
             text-align: center;
         }
 
-        .tab-pane pre, .tab-pane p {
+        .tab-pane pre,
+        .tab-pane p {
             font-size: 110%;
         }
     </style>
 
 </head>
+
 <body>
     <nav class="navbar navbar-expand-md bg-gray navbar-dark sticky-top">
         <a href="https://github.com/zhangys11/cs1" class="github-corner" aria-label="View source on Github">
@@ -356,13 +361,14 @@
                                 <span style="cursor: pointer;" class="fa fa-info-circle"
                                     onclick="$('#dialog_transforms').dialog('open'); $(':focus').blur();"></span>
                             </h6>
-    
+
                             <select id="psi" class="form-control">
                                 <optgroup label="Choose a transform under which the signal is sparse">
                                     <option value="idm" style="background-image:url(/Assets/CS/IDM.png);">IDM (Identity
                                         Matrix)</option>
                                     <option value="dct" selected="selected"
-                                        style="background-image:url(/Assets/CS/DCT.png);">DCT (Discrete Cosine Transform)
+                                        style="background-image:url(/Assets/CS/DCT.png);">DCT (Discrete Cosine
+                                        Transform)
                                     </option>
                                     <option value="dft" style="background-image:url(/Assets/CS/DFT.png);">DFT (Discrete
                                         Fourier Transform)
@@ -371,14 +377,14 @@
                             </select>
                         </div>
                     </div>
-    
+
                     <div id="sensing_matrix" class="card">
                         <h5 class="card-header">Received Data</h5>
                         <div class="card-body">
                             <h6>
                                 Sender-side Timestamp
                                 <span id="timestamp_badge"
-                                    class="badge badge-pill badge-secondary">@ViewBag.Timestamp</span>
+                                    class="badge badge-pill badge-secondary">{{ViewBag["timestamp"]}}</span>
                             </h6>
                             <h5>
                                 <span class="font-italic font-weight-bold">xs</span>
@@ -386,11 +392,11 @@
                                 <span id="save_data" onclick="save_data();" style="cursor:pointer"
                                     class="fa fa-download"></span>
                             </h5>
-                            <textarea id="xs" rows="5" class="form-control"></textarea>
+                            <textarea id="xs" rows="5" class="form-control">{{ViewBag['xs']}}</textarea>
                         </div>
-    
+
                         <br />
-    
+
                         <div class="card-body">
                             <div class="btn-group">
                                 <button onclick="$('#dialog_TVSMG').dialog('open'); $(':focus').blur();"
@@ -431,7 +437,8 @@
                                             1. Receive Data
                                         </td>
                                         <td>
-                                            After the page finished loading, make sure the data (i.e., xs, timestamp) from
+                                            After the page finished loading, make sure the data (i.e., xs, timestamp)
+                                            from
                                             sender side are shown correctly.
                                         </td>
                                     </tr>
@@ -441,11 +448,13 @@
                                             With the received timestamp, generate the sensing matrix by the server-side
                                             TVSMG instance.
                                             <br />
-                                            The generated sensing matrix should be the same as the one used by the sender
+                                            The generated sensing matrix should be the same as the one used by the
+                                            sender
                                             side.
                                             <br />
                                             To verify the security of this system, you are also allowed to <a href="#"
-                                                onclick="$('#dialog_TVSMG').dialog('open'); $(':focus').blur();">tamper with
+                                                onclick="$('#dialog_TVSMG').dialog('open'); $(':focus').blur();">tamper
+                                                with
                                                 the sensing matrix</a>.
                                             With a changed sensing matrix, you can not reconstruct the signal.
                                         </td>
@@ -466,15 +475,16 @@
         </div>
     </div>
 </body>
+
 </html>
 
-
+<input id="viewbag" type="hidden" style="display:none" value="{{ ViewBag }}"></input>
 <div id="dialog_TVSMG" title="Time-Variant Sensing Matrix Generator (Receiver-side)">
-    
+
     <div class="container">
         <div class="form-group">
             <label for="timestamp_tvsmg">Timestamp:</label>
-            <input type="text" id="timestamp_tvsmg" class="form-control" value="@ViewBag.Timestamp"/>
+            <input type="text" id="timestamp_tvsmg" class="form-control" value="@ViewBag.Timestamp" />
         </div>
         <div class="form-group">
             <label for="seed">PRNG Seed:</label>
@@ -486,8 +496,9 @@
             <div class="font-italic px-4 font-weight-bold">
                 * You may manually change the sensing matrix, or randomly
                 <button class="btn btn-outline-dark" onclick="scramble_sm();">generate</button> a new sensing matrix.
-                <br/>
-                * By this demo, you will see that with a changed sensing matrix, you cannot reconstruct the original signal. 
+                <br />
+                * By this demo, you will see that with a changed sensing matrix, you cannot reconstruct the original
+                signal.
             </div>
         </div>
         <div class="form-group">
@@ -516,7 +527,11 @@
                 <img height="100" src="/static/images/IDM.png" />
             </td>
             <td>
-                <math><msqrt><mi>n</mi></msqrt></math>
+                <math>
+                    <msqrt>
+                        <mi>n</mi>
+                    </msqrt>
+                </math>
             </td>
             <td></td>
         </tr>
@@ -534,7 +549,11 @@
                 <img height="100" width="200" src="/static/images/DFT.png" />
             </td>
             <td>
-                <math><msqrt><mi>2</mi></msqrt></math>
+                <math>
+                    <msqrt>
+                        <mi>2</mi>
+                    </msqrt>
+                </math>
             </td>
             <td></td>
         </tr>
