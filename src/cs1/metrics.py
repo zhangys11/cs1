@@ -11,7 +11,7 @@ if __package__:
 else:
     DIR = os.path.dirname(__file__) # cs1 dir
     if DIR not in sys.path:
-        sys.path.append(DIR)        
+        sys.path.insert(0,DIR)
     from __init__ import PSI_LONGNAMES, PSI_MC, PSI_NAMES, GetSensingMatrix
 
 def mutual_coherence(A,B):

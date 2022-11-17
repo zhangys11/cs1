@@ -1,6 +1,7 @@
 '''
 Contains CS basic operations and pipelines
 '''
+import os, sys
 import numpy as np
 import pandas as pd
 import scipy
@@ -15,9 +16,18 @@ from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.linear_model import LassoCV, OrthogonalMatchingPursuit, OrthogonalMatchingPursuitCV
 from statsmodels.multivariate.manova import MANOVA
 
-from . import GetSensingMatrix, SensingWithPHI, PSI_LONGNAMES, PSI_NAMES
-from .basis.common import Generate_PSI
-from .metrics import Univariate_KLD, Multivarate_KLD, calculate_recon_error
+if __package__:
+    from . import GetSensingMatrix, SensingWithPHI, PSI_LONGNAMES, PSI_NAMES
+    from .basis.common import Generate_PSI
+    from .metrics import Univariate_KLD, Multivarate_KLD, calculate_recon_error
+else:
+    DIR = os.path.dirname(__file__)  # cs1 dir
+    if DIR not in sys.path:
+        sys.path.insert(0,DIR)
+    from __init__ import GetSensingMatrix, SensingWithPHI, PSI_LONGNAMES, PSI_NAMES
+    from basis.common import Generate_PSI
+    from metrics import Univariate_KLD, Multivarate_KLD, calculate_recon_error
+
 
 def Sensing(x, k = 0.2, flavor = 'identity'):      
     '''

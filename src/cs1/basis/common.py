@@ -1,3 +1,4 @@
+import os, sys
 import math
 import pywt
 import pickle
@@ -6,9 +7,16 @@ import matplotlib.cm as cm
 import numpy as np
 import scipy
 from scipy.stats import ortho_group
-from .. import GetSensingMatrix,PSI_NAMES
-from ..metrics import mutual_coherence
 
+if __package__:
+    from .. import GetSensingMatrix, PSI_NAMES
+    from ..metrics import mutual_coherence
+else:
+    DIR = os.path.dirname(os.path.dirname(__file__))  # cs1 dir
+    if DIR not in sys.path:
+        sys.path.insert(0,DIR)
+    from __init__ import GetSensingMatrix, PSI_NAMES
+    from metrics import mutual_coherence
 
 def dctmtx(m, n, display = True):    
     '''

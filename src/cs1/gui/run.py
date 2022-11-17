@@ -6,11 +6,13 @@ import os
 
 if __package__:
     from ..metrics import *
+    from ..cs import *
 else:
     DIR = os.path.dirname(os.path.dirname(__file__))  # cs1 dir
     if DIR not in sys.path:
         sys.path.append(DIR)
     from metrics import *
+    from cs import *
 
 from flask import Flask, render_template, request
 import uuid
@@ -34,16 +36,45 @@ def about_page():
 @app.route("/submit", methods=['GET', 'POST'])
 def receiver():  # Receiver(float k, string timestamp, string xs, string XArray, string XAxisMeaning, string XAxisUnit)
     r = ''
-    if request.method == 'POST':
-        '''
-                k = request.form["k"]
-        timestamp = request.form["timestamp"]
+    if request.method == 'POST':        
+        
+        '''k = request.form["k"] # distance between means, respect to std, i.e. (mu2 - mu1) / std, or how many stds is the difference.
+        timestamp = request.form["timestamp"] # number of observations / samples			
         xs = request.form["xs"]
         XArray = request.form["XArray"]
         XAxisMeaning = request.form["XAxisMeaning"]
-        XAxisUnit = request.form["XAxisUnit"]
-        '''
+        XAxisUnit = request.form["XAxisUnit"]'''
+
         return render_template('receiver.html', ViewBag=request.form) # {'message': 'success', 'html': r}  # render_template("home.html", use_sample = use_sample, d = d, nobs = n, cla_result = r)
+
+@app.route("/reconstruct", methods=['GET', 'POST'])
+def reconstruct():  # Receiver(float k, string timestamp, string xs, string XArray, string XAxisMeaning, string XAxisUnit)
+    # string phi, string psi, string xs, int n /* k = len(xs)/n */
+    phi = list(map(int, sys.argv[1].split(',')))
+    psi = sys.argv[2]
+    xs = list(map(float, sys.argv[3].split(',')))
+    n = int(sys.argv[4])
+    xr, z = Recovery(phi, psi, xs, n)
+
+    A = MeasurementMatrix(n, phi, t = psi)
+    xr, z = Recovery (A, xs, t = psi, PSI = None, solver = 'LASSO', fast_lasso = False, \
+    display = False, verbose = False)
+
+    d = {}
+    d['xr'] = xr.tolist() #[ '%.2f' % elem for elem in xr.tolist() ]
+    d['z'] = z.tolist()
+
+    return d
+    
+    # 
+    # otherwise, you may create a local file for data interchange
+    fn = os.path.dirname(os.path.realpath(__file__)) + "/" + str(uuid.uuid4()) + ".json"
+    with open(fn, 'w') as f:
+        json.dump(d, f)
+
+    #print(os.getcwd())
+    print(fn)
+    #print(json.dumps(d))
 
 '''
 The Flask dev server is not designed to be particularly secure, stable, or efficient. 
@@ -53,8 +84,6 @@ The Flask quickstart docs explain this in the "Externally Visible Server" sectio
     If you run the server you will notice that the server is only accessible from your own computer, not from any other in the network. This is the default because in debugging mode a user of the application can execute arbitrary Python code on your computer.
     If you have the debugger disabled or trust the users on your network, you can make the server publicly available simply by adding --host=0.0.0.0 to the command line.
 '''
-
-
 
 def open_browser():
     webbrowser.open_new('http://localhost:5006/')
