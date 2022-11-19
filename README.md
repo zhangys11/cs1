@@ -1,3 +1,5 @@
+# TODO: in GUI add more Transforms, DCT defect
+
 # cs1
 
 Compressed Sensing library for 1D Spectroscopic Profiling Data
@@ -124,3 +126,12 @@ Publications:
     PSI, _ = EBP(X) # X is a m-by-n training dataset. PSI is the EBP basis
     PSI, _, _ = LDA(X, y, display = True) # X and y are training dataset. PSI is the LDA basis.
 
+
+# run as a local web server
+
+`python -m cs1.gui.run`
+
+You can then access the web GUI at the 5006 port: 
+<img src="src/cs1/gui/static/images/Sensing - clean.png">
+
+<img src="src/cs1/gui/static/images/reconstruction - clean.png">

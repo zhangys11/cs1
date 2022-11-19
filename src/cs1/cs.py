@@ -68,6 +68,7 @@ def MeasurementMatrix (N, r, t = 'DCT'):
     
     kn = len(r)    
     a = np.zeros(N)    
+    t = t.upper()
         
     # Suppose the first number in the permutation is 42. Then choose the 42th
     # elements in a matrix full of zeros and change it to 1. Apply a discrete
@@ -112,13 +113,15 @@ def Recovery (A, xs, t = 'DCT', PSI = None, solver = 'LASSO', fast_lasso = False
     solver : 'LASSO' or 'OMP'
     '''
 
+    t = t.upper()
+
     if solver == 'LASSO':
 
         alphas = None # automatic set alphas
-        if  t == PSI_NAMES[5] or t == PSI_LONGNAMES[5] or t == 'rom' or \
-            t == 'DFT' or t == 'dft' or \
-            t == 'DWT' or t == 'dwt' or \
-            t == 'LDA' or t == 'lda':
+        if  t == PSI_NAMES[5] or t == PSI_LONGNAMES[5] or \
+            t == 'DFT' or \
+            t == 'DWT' or \
+            t == 'LDA':
             alphas = [0.0001, 0.00001] # set empirical alpha values. LDA needs smaller alpha
 
         # 实测并未发现两种模式的运行时间差异
@@ -138,21 +141,24 @@ def Recovery (A, xs, t = 'DCT', PSI = None, solver = 'LASSO', fast_lasso = False
         z = omp.coef_
         # print('OMP score:', omp.score(A, xs)) # Return the coefficient of determination R^2 of the prediction.
     
-    if t == PSI_NAMES[0] or t == PSI_LONGNAMES[0] or t == 'idm':
+    if t == PSI_NAMES[0] or t == PSI_LONGNAMES[0]:
         z = np.linalg.pinv(A) @ xs
         xr = z
-    elif  t == PSI_NAMES[1] or t == PSI_LONGNAMES[1] or t == 'dct':
+    elif  t == PSI_NAMES[1] or t == PSI_LONGNAMES[1]:
         xr = cv2.idct(z)
-    elif t == PSI_NAMES[2] or t == PSI_LONGNAMES[2] or t == 'dft':
+    elif t == PSI_NAMES[2] or t == PSI_LONGNAMES[2]:
         xr = cv2.idft(z)
-    elif t == PSI_NAMES[3] or t == PSI_LONGNAMES[3] or t == 'dwt' or \
-        t == PSI_NAMES[4] or t == PSI_LONGNAMES[4] or t == 'hwt' or \
-        t == PSI_NAMES[5] or t == PSI_LONGNAMES[5] or t == 'rom' or \
-        t == 'EBP' or t == 'ebp' or t == 'LDA' or t == 'lda': # these are adaptive bases
+    elif t == PSI_NAMES[3] or t == PSI_LONGNAMES[3] or \
+        t == PSI_NAMES[4] or t == PSI_LONGNAMES[4] or \
+        t == PSI_NAMES[5] or t == PSI_LONGNAMES[5] or \
+        t == 'EBP' or t == 'LDA' : # these are adaptive bases
         xr = (PSI @ z).T
     else:
         print ('unsupported transform type: ', t)
         return
+
+    z = z.flatten()
+    xr = xr.flatten()
 
     if display:
 

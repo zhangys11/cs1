@@ -8,29 +8,31 @@
     <link rel="stylesheet" href="/static/jquery-ui.css">
     <link rel="stylesheet" href="/static/font-awesome.css">
     <script src="/static/jquery-3.3.1.min.js"></script>
-    <script src="/static/bootstrap.js"></script>
+    <script src="/static/bootstrap.js"></script>    
+    <script src="/static/jquery-ui-1.12.1.js"></script>
     <script src="/static/jquery.blockUI.js"></script>
     <script src="/static/jquery.form.min.js"></script>
     <script src="https://code.highcharts.com/highcharts.js"></script>
     <script src="/static/utility.chart.js"></script>
     <script src="/static/seedrandom.js"></script>
 
-    <script>        
+    <script>
+        var dic = {}
+        var xarray = []
         $(function () {
 
             // research later: how to receive {{ViewBag}} to dic in js. 
-            // we currently get viewbag from a hidden tag.
-            console.log($('#viewbag').val());
-            var dic = JSON.parse($('#viewbag').val()); // TODO: parse error
+            // we currently get viewbag from a hidden tag.      
+            dic = JSON.parse($('#viewbag').val().replace(/'/g,'"')); // need to replace ' with "
             
-            var t = dic['timestamp'];
+            var t = new Date(dic['timestamp']);
             var s = secondSinceEpoch(t);
-            var xarray = JSON.parse(dic['XArray']); // '{{ViewBag["XArray"]}}'
+            xarray = JSON.parse(dic['XArray']); // '{{ViewBag["XArray"]}}'
             var n = xarray.length;
+            dic['n'] = n;
             var xs = JSON.parse(dic['xs']); // '{{ViewBag["xs"]}}'
-            var k = dic['k']; //<text>{{ ViewBag["k"] }}</text>;
+            var k = parseFloat(dic['k']); //<text>{{ ViewBag["k"] }}</text>;
 
-            alert(dic);
             $('#sampling_ratio').val(Math.round(k * 100));
             $('#k_label').html($('#sampling_ratio').val() + '%');
             $('#seed').val(s);
@@ -124,45 +126,46 @@
             $.blockUI({ message: '<h4>' + 'Processing' + '</h4>', fadeIn: 0 });
 
             $.post('/reconstruct',
-                {
-                    phi: $('#sm_indices').text(),
-                    xs: $('#xs').text(),
-                    psi: $('#psi').val(),
-                    n: n,
-                },
-                function (data, status) {
+            {
+                phi: $('#sm_indices').text(),
+                xs: $('#xs').text(),
+                psi: $('#psi').val(),
+                n: dic['n'],
+            },
+            function (data, status) {
 
-                    var obj = JSON.parse(data);
-                    createSpectrumChart('chart_z',
-                        obj['z'],
-                        'Signal in Latent Space (z)',
-                        '',
-                        '',
-                        '',
-                        $('#psi').val(),
-                        '');
-                    var xr = [[]];
-                    for (var i = 0; i < xarray.length; i++) {
-                        xr[i] = [];
-                        xr[i][0] = xarray[i];
-                        xr[i][1] = obj['xr'][i][0];
-                    }
-                    createSpectrumChart('chart_xr',
-                        xr,
-                        'Reconstructed Signal (xr)',
-                        timestamp, //'{{ViewBag["timestamp"]}}',
-                        dic['XAisUnit'], //'{{ViewBag["XAxisUnit"]}}',
-                        '',
-                        dic['XAsisMeaning']); //'{{ViewBag["XAxisMeaning"]}}');
-                    // $('#output').text(obj['z']);
+                // var obj = JSON.parse(data.replace(/'/g,'"'));
+                console.log(data)
+                createSpectrumChart('chart_z',
+                    data['z'],
+                    'Signal in Latent Space (z)',
+                    '',
+                    '',
+                    '',
+                    $('#psi').val(),
+                    '');
+                var xr = [[]];
+                for (var i = 0; i < xarray.length; i++) {
+                    xr[i] = [];
+                    xr[i][0] = xarray[i];
+                    xr[i][1] = data['xr'][i]; // obj['xr'][i][0]
+                }
+                createSpectrumChart('chart_xr',
+                    xr,
+                    'Reconstructed Signal (xr)',
+                    dic['timestamp'], //'{{ViewBag["timestamp"]}}',
+                    dic['XAisUnit'], //'{{ViewBag["XAxisUnit"]}}',
+                    '',
+                    dic['XAsisMeaning']); //'{{ViewBag["XAxisMeaning"]}}');
+                // $('#output').text(obj['z']);
 
-                    $.unblockUI();
+                $.unblockUI();
 
-                })
-                .fail(function (data) {
-                    $.unblockUI();
-                    alert(data['status'] + "\n\n" + data['responseText']);
-                });
+            })
+            .fail(function (data) {
+                $.unblockUI();
+                alert(data['status'] + "\n\n" + data['responseText']);
+            });
         }
 
         function save_data() {
@@ -366,11 +369,12 @@
                                 <optgroup label="Choose a transform under which the signal is sparse">
                                     <option value="idm" style="background-image:url(/Assets/CS/IDM.png);">IDM (Identity
                                         Matrix)</option>
-                                    <option value="dct" selected="selected"
+                                    <option value="dct" 
                                         style="background-image:url(/Assets/CS/DCT.png);">DCT (Discrete Cosine
                                         Transform)
                                     </option>
-                                    <option value="dft" style="background-image:url(/Assets/CS/DFT.png);">DFT (Discrete
+                                    <option value="dft" selected="selected"  
+                                    style="background-image:url(/Assets/CS/DFT.png);">DFT (Discrete
                                         Fourier Transform)
                                     </option>
                                 </optgroup>
@@ -384,7 +388,7 @@
                             <h6>
                                 Sender-side Timestamp
                                 <span id="timestamp_badge"
-                                    class="badge badge-pill badge-secondary">{{ViewBag["timestamp"]}}</span>
+                                    class="badge badge-pill badge-secondary">{{ViewBag['timestamp']}}</span>
                             </h6>
                             <h5>
                                 <span class="font-italic font-weight-bold">xs</span>
@@ -484,7 +488,7 @@
     <div class="container">
         <div class="form-group">
             <label for="timestamp_tvsmg">Timestamp:</label>
-            <input type="text" id="timestamp_tvsmg" class="form-control" value="@ViewBag.Timestamp" />
+            <input type="text" id="timestamp_tvsmg" class="form-control" value="{{ViewBag['timestamp']}}" />
         </div>
         <div class="form-group">
             <label for="seed">PRNG Seed:</label>
@@ -497,7 +501,7 @@
                 * You may manually change the sensing matrix, or randomly
                 <button class="btn btn-outline-dark" onclick="scramble_sm();">generate</button> a new sensing matrix.
                 <br />
-                * By this demo, you will see that with a changed sensing matrix, you cannot reconstruct the original
+                * By doing this, you will see that with a changed sensing matrix, you cannot reconstruct the original
                 signal.
             </div>
         </div>

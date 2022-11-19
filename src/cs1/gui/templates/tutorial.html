@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>cs1.gui</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/static/bootstrap.css">
+    <link rel="stylesheet" href="/static/jquery-ui.css">
+    <link rel="stylesheet" href="/static/font-awesome.css">
+    <script src="/static/jquery-3.3.1.min.js"></script>
+    <script src="/static/bootstrap.js"></script>
+    <script src="/static/jquery-ui-1.12.1.js"></script>
+    <script src="/static/jquery.blockUI.js"></script>
+    <script src="/static/jquery.form.min.js"></script>
+    <script src="https://code.highcharts.com/highcharts.js"></script>
+    <script src="/static/utility.chart.js"></script>
+    <script src="/static/seedrandom.js"></script>
+
+    <style>
+        .bg-rainbow {
+            background-image: linear-gradient(to right, #FF000080, #FFFF0080, #00FF0080, #00FFFF80, #0000FF80, #FF00FF80);
+            /*opacity: 0.7;
+            text-align: center;*/
+            color: #404040;
+            text-shadow: 8px 8px 15px #fff;
+        }
+
+        .bg-gray {
+            background-color: dimgray;
+            color: whitesmoke;
+        }
+
+        table.break_word td,
+        table.break_word tr,
+        pre.break_word {
+            word-break: break-word;
+            overflow-wrap: break-word;
+            white-space: pre-wrap;
+        }
+
+        .nav-tabs {
+            background-color: #2bbbad;
+            font: 120%;
+        }
+
+        .nav-tabs>li.nav-item {
+            padding-left: 15px;
+            padding-top: 15px;
+            padding-bottom: 15px;
+        }
+
+        .nav-tabs>li.nav-item>a.nav-link {
+            color: #eee;
+            border: none;
+        }
+
+        .nav-tabs>li.nav-item>a.nav-link.active {
+            background-color: #22968a;
+        }
+
+        .nav-tabs>li.nav-item>a.nav-link:hover {
+            background-color: #22968a;
+        }
+
+        .tab-pane {
+            padding: 1.5em;
+        }
+
+        .tab-pane img {
+            max-width: 100%;
+            text-align: center;
+        }
+
+        .tab-pane pre,
+        .tab-pane p {
+            font-size: 110%;
+        }
+
+        img {
+            max-width: 100%;
+            max-height: 100%;
+        }
+
+        .checkbox-round {
+            width: 1.2em;
+            height: 1.2em;
+            background-color: #eee;
+            border-radius: 50%;
+            vertical-align: middle;
+            border: 1px solid #222;
+            -webkit-appearance: none;
+            outline: none;
+            cursor: pointer;
+        }
+
+        .checkbox-round:checked {
+            background-color: darkslategray;
+        }
+
+        .slider {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 15px;
+            border-radius: 5px;
+            background: #d3d3d3;
+            outline: none;
+            opacity: 0.7;
+            -webkit-transition: .2s;
+            transition: opacity .2s;
+        }
+
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            background: #4CAF50;
+            cursor: pointer;
+        }
+
+        .slider::-moz-range-thumb {
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            background: #4CAF50;
+            cursor: pointer;
+        }
+
+        #dialog_transforms td {
+            text-align: center;
+            vertical-align: middle;
+        }
+
+        #dialog_transforms tr {
+            text-align: center;
+            vertical-align: middle;
+        }
+
+        footer {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <nav class="navbar navbar-expand-md bg-gray navbar-dark sticky-top">
+        <a href="https://github.com/zhangys11/cs1" class="github-corner" aria-label="View source on Github">
+            <svg width="60" height="60" viewBox="0 0 250 250"
+                style="fill:#151513; color:#fff; position: absolute; top: 0; border: 0; right: 0;" aria-hidden="true">
+                <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+                <path
+                    d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+                    fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+                <path
+                    d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+                    fill="currentColor" class="octo-body"></path>
+            </svg>
+        </a>
+        <div class="container-fluid">
+            <div class="navbar-brand text-center" role="banner">
+                <span class="fa fa-codepen" style="font-size:180%; color: white"></span>
+                <span style="color:lightgrey;">cs1</span>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid px-lg-5 px-md-3 px-sm-0" style="padding-bottom: 60px;">
+
+        <div class="card justify-content-center align-items-center" id="tab">
+            <div class="card-title">
+                <br />
+                <ul class="nav nav-pills">
+                    <li class="nav-item"><a class="nav-link btn-outline-dark active" data-toggle="pill" href="#t1">1. Compressed Sensing</a></li>
+                    &nbsp;
+                    <li class="nav-item"><a class="nav-link btn-outline-dark" data-toggle="pill" href="#t2">2. Data Transmission </a></li>
+                    &nbsp;
+                    <li class="nav-item"><a class="nav-link btn-outline-dark" data-toggle="pill" href="#t3">3. Signal Reconstruction</a></li>
+                    &nbsp;
+                    <li class="nav-item"><a class="nav-link btn-outline-dark" data-toggle="pill" href="#t4">4. (Optional) Tamper with the sensing matrix</a></li>
+                </ul>
+            </div>
+            <div class="card-body">
+                <div class="tab-content">
+                    <div class="tab-pane fade show active" id="t1">
+                        <img src="/static/images/sensing.png" />
+                    </div>
+
+                    <div class="tab-pane fade" id="t2">
+                        <p class="offset-md-3 col-md-6 px-2">
+                            Only xs and t are sent. Even if a hacker intercepts the data, without knowing the exact
+                            sensing matrix used to produce xs, he/she cannot reconstruct the original signal.
+                            <br />
+                            In this demo app, data between the sender and the receiver is transmitted via the HTTP POST
+                            protocol.
+                        </p>
+                    </div>
+
+                    <div class="tab-pane fade" id="t3">
+                        <img src="/static/images/reconstruction.png" />
+                        <h4>Optional: Tamper with the sensing matrix.</h4>
+                        <img src="~/Assets/CS/sensing matrix.jpeg" />
+                    </div>
+
+                    <div class="tab-pane fade" id="t4">
+                        <h4 class="p-2">
+                            To verify the security of this system, users are allowed to tamper with the sensing matrix
+                            in Step 3 "Signal Reconstruction".
+                            <br />
+                            With a changed sensing matrix, you will find that you can no longer correctly reconstruct
+                            the signal.
+                        </h4>
+                        <hr />
+                        <img src="/static/images/sensing matrix.jpeg" />
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</body>
+
+</html>
