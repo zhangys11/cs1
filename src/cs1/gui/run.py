@@ -68,9 +68,12 @@ def reconstruct():  # Receiver(float k, string timestamp, string xs, string XArr
         psi = request.form["psi"]
         n = int( request.form["n"] )
 
+
+        #     A = csmtx(n, phi, t = psi)
+        #     xr, z = lasso_cs(A, xs, 0.005, psi, silent = True)
         A = MeasurementMatrix(n, phi, t = psi)
-        z,xr = Recovery (A, xs, t = psi, PSI = None, solver = 'LASSO', fast_lasso = False, \
-        display = False, verbose = False)
+        z,xr = Recovery (A, xs, t = psi, PSI = None, solver = 'LASSO', \
+        L1 = 0.005, display = False, verbose = True) # solver = OMP
 
         d = {}
         d['xr'] = xr.flatten().tolist() #[ '%.2f' % elem for elem in xr.tolist() ]

@@ -1,8 +1,6 @@
-# TODO: in GUI add more Transforms, DCT defect
-
 # cs1
 
-Compressed Sensing library for 1D Spectroscopic Profiling Data
+Compressed Sensing library for 1D (one-dimensional) Spectroscopic Profiling Data
 
 <table>
     <tbody>

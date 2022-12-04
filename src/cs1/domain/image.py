@@ -310,13 +310,13 @@ def dft_lossy_image_compression(path, percent = 99):
     return lossy_idft
 
 
-def Image_Sensing_n_Recovery(path, k = 0.2, t = 'DCT', fast_lasso = False):
+def Image_Sensing_n_Recovery(path, k = 0.2, t = 'DCT', L1 = 0.005):
     '''
     Provide a complete sensing and recovery pipeline for the target image
     '''
 
     x, w, h = get_img_data(path)
-    z, xr = cs.Sensing_n_Recovery(x, k = k, t = t, fast_lasso=fast_lasso)
+    z, xr = cs.Sensing_n_Recovery(x, k = k, t = t, L1=L1)
 
     img_r = xr.reshape((w,h))
 

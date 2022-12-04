@@ -13,7 +13,7 @@ import pylab
 
 from sklearn.decomposition import PCA
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn.linear_model import LassoCV, OrthogonalMatchingPursuit, OrthogonalMatchingPursuitCV
+from sklearn.linear_model import Lasso, LassoCV, OrthogonalMatchingPursuit, OrthogonalMatchingPursuitCV
 from statsmodels.multivariate.manova import MANOVA
 
 if __package__:
@@ -67,7 +67,7 @@ def MeasurementMatrix (N, r, t = 'DCT'):
     '''
     
     kn = len(r)    
-    a = np.zeros(N)    
+    a = np.zeros((1, N))  
     t = t.upper()
         
     # Suppose the first number in the permutation is 42. Then choose the 42th
@@ -79,14 +79,14 @@ def MeasurementMatrix (N, r, t = 'DCT'):
     A = np.zeros ((kn, N)) #csr_matrix, dtype='float16') # reduce memory use. numpy uses float64 as default dtype.
 
     for i, j in enumerate(r):
-        a[j] = 1
+        a[0,j] = 1
         if t == 'IDM' or t == 0:
-            A[i] = a # .astype(np.float16)
+            A[i,:] = a # .astype(np.float16)
         elif t == 'DCT' or t == 1:
-            A[i] = cv2.dct(a).flatten() # .astype(np.float16)
+            A[i,:] = cv2.dct(a)# .flatten() # .astype(np.float16)
         elif t == 'DFT' or t == 2:
-            A[i] = cv2.dft(a).flatten() # .astype(np.float16)
-        a[j] = 0
+            A[i,:] = cv2.dft(a)# .flatten() # .astype(np.float16)
+        a[0,j] = 0
     
     ###### ALTERNATIVE IMPLEMENTATION ######
     # phi = np.zeros((k, N)) # Sampling matrix, kxN    
@@ -97,7 +97,7 @@ def MeasurementMatrix (N, r, t = 'DCT'):
     
     return A # .toarray()
 
-def Recovery (A, xs, t = 'DCT', PSI = None, solver = 'LASSO', fast_lasso = False, \
+def Recovery (A, xs, t = 'DCT', PSI = None, solver = 'LASSO', L1 = 0.005, \
     display = True, verbose = False):
     '''    
     Solve the optimization problem A@z = y
@@ -111,6 +111,7 @@ def Recovery (A, xs, t = 'DCT', PSI = None, solver = 'LASSO', fast_lasso = False
     t : IDM, DCT, DFT, etc.
     PSI : For adpative transforms, users need to pass in the PSI basis. For non-adaptive ones, leave as none.
     solver : 'LASSO' or 'OMP'
+    L1 : LASSO L1. specify a float or leave None for CV.
     '''
 
     t = t.upper()
@@ -122,14 +123,14 @@ def Recovery (A, xs, t = 'DCT', PSI = None, solver = 'LASSO', fast_lasso = False
             t == 'DFT' or \
             t == 'DWT' or \
             t == 'LDA':
-            alphas = [0.0001, 0.00001] # set empirical alpha values. LDA needs smaller alpha
+            alphas = [0.005, 0.0001, 0.00001] # set empirical alpha values. LDA needs smaller alpha
 
-        # 实测并未发现两种模式的运行时间差异
-        if fast_lasso:
-            lasso = LassoCV(alphas = alphas, selection = 'random', tol = 0.001, n_jobs=-1, verbose = verbose) # ‘random’ often leads to significantly faster convergence especially when tol is higher than 1e-4.
+        if isinstance(L1, float):
+            lasso = Lasso(alpha=L1, tol = 0.0005)    
         else:
-            lasso = LassoCV(alphas = alphas, selection = 'cyclic', n_jobs=-1, verbose = verbose)
-
+            lasso = LassoCV(alphas = alphas, selection = 'random', tol = 0.001, n_jobs=-1, verbose = verbose) # ‘random’ often leads to significantly faster convergence especially when tol is higher than 1e-4.
+            # 实测并未发现 selction = cyclic / random 两种模式的运行时间差异
+        
         lasso.fit(A, xs)
         z = lasso.coef_
 
@@ -178,7 +179,7 @@ def Recovery (A, xs, t = 'DCT', PSI = None, solver = 'LASSO', fast_lasso = False
     return z, xr
 
 def Sensing_n_Recovery(x, k = 0.2, t = 'DCT', solver = 'LASSO', \
-    fast_lasso = False, display = True):
+    L1 = 0.005, display = True):
     
     '''
     Provide a complete pipeline for signal sensing and recovery with a speicfic PSI. 
@@ -204,7 +205,7 @@ def Sensing_n_Recovery(x, k = 0.2, t = 'DCT', solver = 'LASSO', \
         xs, r = Sensing(x, k)
         A = MeasurementMatrix (len(x), r, t = t)
 
-    z,xr = Recovery (A, xs, t = t, solver = solver, fast_lasso=fast_lasso, display = False)
+    z,xr = Recovery (A, xs, t = t, solver = solver, L1=L1, display = False)
 
     if display: 
 
@@ -398,7 +399,7 @@ def GridSearch_Sensing_n_Recovery(x, PSIs, ks = [0.1, 0.2, 0.5, 1.001], solver =
     return RMSES
 
 
-def Dataset_Sensing_n_Recovery (X, y = None, k = 0.2, t = 'DCT', solver = 'LASSO', fast_lasso = False, display = 'all'):
+def Dataset_Sensing_n_Recovery (X, y = None, k = 0.2, t = 'DCT', solver = 'LASSO', L1 = 0.005, display = 'all'):
     '''
     Provide a complete pipeline for an entire dataset. 
     PCA 2D visualization and multivariate KLD are evaluated.
