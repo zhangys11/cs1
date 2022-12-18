@@ -4,4 +4,6 @@ dist/
 notebooks/.ipynb_checkpoints/Compressed Sensing-checkpoint.ipynb
 src/cs1.egg-info/
 notebooks/.ipynb_checkpoints/
-notebooks/PSIs_2090.pkl
+notebooks/*.pkl
+notebooks/mnist_data/
+notebooks/sample_.png
