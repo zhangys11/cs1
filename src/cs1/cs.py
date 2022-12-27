@@ -37,7 +37,7 @@ def Sensing(x, k = 0.2, flavor = 'identity'):
     ----------
     k : (0,1]. sampling ratio.
     flavor : 
-        'identity' - use a scramble identity matrix. take its n*k rows as sensing matrix
+        'identity' / 'bernoulli' - use a scramble identity matrix. take its n*k rows as sensing matrix
         'gaussian' - sampling from N(1, 1/n)
 
     Return
@@ -110,7 +110,7 @@ def Recovery (A, xs, t = 'DCT', PSI = None, solver = 'LASSO', L1 = 0.005, \
                       Now we use LassoCV. This param is no longer needed.
     t : IDM, DCT, DFT, etc.
     PSI : For adpative transforms, users need to pass in the PSI basis. For non-adaptive ones, leave as none.
-    solver : 'LASSO' or 'OMP'
+    solver : 'LASSO' or 'OMP' or 'VAE' (variational autoencoder, need a pretrained VAE model)
     L1 : LASSO L1. specify a float or leave None for CV.
     '''
 
