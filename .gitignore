@@ -7,3 +7,4 @@ notebooks/.ipynb_checkpoints/
 notebooks/*.pkl
 notebooks/mnist_data/
 notebooks/sample_.png
+notebooks/tmp.csv

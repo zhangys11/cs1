@@ -123,17 +123,20 @@ def img_dft(path):
     plt.subplot(231)
     plt.imshow(img, 'gray')
     plt.title('original image')
-    plt.xticks([]), plt.yticks([])
+    plt.xticks([])
+    plt.yticks([])
     
     plt.subplot(232)
     plt.imshow(np.log(abs(dst)),'gray')
     plt.title('DFT')
-    plt.xticks([]), plt.yticks([])
+    plt.xticks([])
+    plt.yticks([])
     
     plt.subplot(233)
     plt.imshow(img_r, 'gray')
     plt.title('IDFT')
-    plt.xticks([]), plt.yticks([])
+    plt.xticks([])
+    plt.yticks([])
     
     plt.subplot(234)
     plt.imshow(img, 'gray')
@@ -176,17 +179,20 @@ def img_dwt(path, wavelet = 'db3', flavor = 1):
         plt.subplot(231)
         plt.imshow(img, 'gray')
         plt.title('original image')
-        plt.xticks([]), plt.yticks([])
+        plt.xticks([])
+        plt.yticks([])
         
         plt.subplot(232)
         plt.imshow(np.log(abs(img_dwt[0])), 'gray')
         plt.title('DWT LL')
-        plt.xticks([]), plt.yticks([])
+        plt.xticks([])
+        plt.yticks([])
 
         plt.subplot(233)
         plt.imshow(np.log(abs(img_dwt[1][0])), 'gray')
         plt.title('DWT LH')
-        plt.xticks([]), plt.yticks([])
+        plt.xticks([])
+        plt.yticks([])
 
         plt.subplot(234)
         plt.imshow(np.log(abs(img_dwt[1][1])), 'gray')
@@ -196,12 +202,14 @@ def img_dwt(path, wavelet = 'db3', flavor = 1):
         plt.subplot(235)
         plt.imshow(np.log(abs(img_dwt[1][2])), 'gray')
         plt.title('DWT HH')
-        plt.xticks([]), plt.yticks([])
+        plt.xticks([])
+        plt.yticks([])
         
         plt.subplot(236)
         plt.imshow(img_idwt, 'gray')
         plt.title('IDWT')
-        plt.xticks([]), plt.yticks([])
+        plt.xticks([])
+        plt.yticks([])
 
         plt.show()
 
@@ -217,17 +225,20 @@ def img_dwt(path, wavelet = 'db3', flavor = 1):
         plt.subplot(131)
         plt.imshow(img, 'gray')
         plt.title('original image')
-        plt.xticks([]), plt.yticks([])
+        plt.xticks([])
+        plt.yticks([])
         
         plt.subplot(132)
         plt.imshow(np.log(abs(img_dwt)), 'gray')
         plt.title('DWT')
-        plt.xticks([]), plt.yticks([])
+        plt.xticks([])
+        plt.yticks([])
         
         plt.subplot(133)
         plt.imshow(img_idwt, 'gray')
         plt.title('IDWT')
-        plt.xticks([]), plt.yticks([])
+        plt.xticks([])
+        plt.yticks([])
 
         plt.show()
 
@@ -258,17 +269,20 @@ def dct_lossy_image_compression(path, percent = 99):
     plt.subplot(131)
     plt.imshow(img, 'gray')
     plt.title('original image')
-    plt.xticks([]), plt.yticks([])
+    plt.xticks([])
+    plt.yticks([])
     
     plt.subplot(132)
     plt.imshow(np.log(abs(lossy_dct)),'gray')
     plt.title('lossy/sparse DCT')
-    plt.xticks([]), plt.yticks([])
+    plt.xticks([])
+    plt.yticks([])
     
     plt.subplot(133)
     plt.imshow(lossy_idct, 'gray')
     plt.title('IDCT')
-    plt.xticks([]), plt.yticks([])
+    plt.xticks([])
+    plt.yticks([])
 
     return lossy_idct
 
@@ -295,20 +309,79 @@ def dft_lossy_image_compression(path, percent = 99):
     plt.subplot(131)
     plt.imshow(img, 'gray')
     plt.title('original image')
-    plt.xticks([]), plt.yticks([])
+    plt.xticks([])
+    plt.yticks([])
     
     plt.subplot(132)
     plt.imshow(np.log(abs(lossy_dft)),'gray')
     plt.title('lossy/sparse DFT')
-    plt.xticks([]), plt.yticks([])
+    plt.xticks([])
+    plt.yticks([])
     
     plt.subplot(133)
     plt.imshow(lossy_idft, 'gray')
     plt.title('IDFT')
-    plt.xticks([]), plt.yticks([])
+    plt.xticks([])
+    plt.yticks([])
 
     return lossy_idft
 
+def dwt_lossy_image_compression(path, percent = 99, wavelet = 'db3', level = 3):
+    '''
+    Parameters
+    ----------
+    wavelet : a discrete wavelet type, e.g., haar, db3, etc. default = 'db3'
+    '''
+
+    img = cv2.imread(path, cv2.IMREAD_GRAYSCALE).astype('float') # input a square image
+    w,h = img.shape
+    # imgdata = img.reshape(1, w*h) # expand to 1D array
+
+
+    # levels = int(np.floor(np.log2(img.shape[0])))
+    dec = pywt.wavedec2(img, wavelet, level=level)
+    # print(aa.shape)
+    # print(len(d2), 'x',  d2[0].shape) # ah,av,ad are tupled into d2
+    # print(len(d1), 'x',  d1[0].shape) # h,v,d are tupled into d1
+
+    # threshold = 40  # for haar, threshold 20 get a compress ratio = 4524 / (4524 + 11860) = 27.6%
+    dst, coeff_slices = pywt.coeffs_to_array(dec)
+    # print(dst.shape, dst.max(), dst.min())
+    # print(coeff_slices)
+    threshold = np.percentile(np.abs(dst), percent)
+    # print( (np.abs(arr) >= threshold).sum(), (np.abs(arr) < threshold).sum() )
+    lossy_dwt = pywt.threshold(dst, threshold, mode='soft', substitute=0)
+    # plt.imshow(lossy_dst)
+    # plt.show()
+    nwc = pywt.array_to_coeffs(lossy_dwt, coeff_slices, output_format='wavedec2')
+    lossy_idwt = pywt.waverec2(nwc, wavelet)
+    # plt.imshow(imgr)
+    # plt.show()
+
+    print ('non-zero elements: ', np.count_nonzero(lossy_dwt))
+    print('Compression ratio = ', 100-percent, '%')
+
+    plt.figure(figsize=(9,3))
+
+    plt.subplot(131)
+    plt.imshow(img, 'gray')
+    plt.title('original image')
+    plt.xticks([])
+    plt.yticks([])
+    
+    plt.subplot(132)
+    plt.imshow(np.log(abs(lossy_dwt)),'gray')
+    plt.title('lossy/sparse DWT')
+    plt.xticks([])
+    plt.yticks([])
+    
+    plt.subplot(133)
+    plt.imshow(lossy_idwt, 'gray')
+    plt.title('IDFT')
+    plt.xticks([])
+    plt.yticks([])
+
+    return lossy_idwt
 
 def Image_Sensing_n_Recovery(path, k = 0.2, t = 'DCT', L1 = 0.005):
     '''

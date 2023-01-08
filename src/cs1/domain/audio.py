@@ -1,13 +1,14 @@
-from pydub import AudioSegment, playback
-import cv2
+import os
+import wave
 import numpy as np
 import matplotlib.pyplot as plt
-import wave
+import cv2
+import pywt
+from pydub import AudioSegment, playback
 from scipy.signal import wavelets
 from scipy.io import wavfile
-import os
-from . import frequency_spectrum
 
+from . import frequency_spectrum
 
 def simulate_ECG(bpm = 60, time_length = 10, display = True):
     '''
@@ -81,17 +82,20 @@ def dct_lossy_signal_compression(x, percent = 99):
     plt.subplot(311)
     plt.plot(x, 'gray')
     plt.title('original signal')
-    plt.xticks([]), plt.yticks([])
+    plt.xticks([])
+    plt.yticks([])
     
     plt.subplot(312)
     plt.plot(abs(lossy_dct),'gray')
     plt.title('lossy/sparse DCT')
-    plt.xticks([]), plt.yticks([])
+    plt.xticks([])
+    plt.yticks([])
     
     plt.subplot(313)
     plt.plot(lossy_idct, 'gray')
     plt.title('recovered signal (IDCT)')
-    plt.xticks([]), plt.yticks([])
+    plt.xticks([])
+    plt.yticks([])
 
     return lossy_idct
 
@@ -117,20 +121,60 @@ def dft_lossy_signal_compression(x, percent = 99):
     plt.subplot(311)
     plt.plot(x, 'gray')
     plt.title('original signal')
-    plt.xticks([]), plt.yticks([])
+    plt.xticks([])
+    plt.yticks([])
     
     plt.subplot(312)
     plt.plot(abs(lossy_dft),'gray')
     plt.title('lossy/sparse DCT')
-    plt.xticks([]), plt.yticks([])
+    plt.xticks([])
+    plt.yticks([])
     
     plt.subplot(313)
     plt.plot(lossy_idft, 'gray')
     plt.title('recovered signal (IDCT)')
-    plt.xticks([]), plt.yticks([])
+    plt.xticks([])
+    plt.yticks([])
 
     return lossy_idft
 
+def dwt_lossy_signal_compression(x, percent = 99, wavelet = 'db3', level=5):    
+    '''
+    DWT lossy compression and recovery for 1D signal
+    '''
+
+    dec = pywt.wavedec(x, wavelet, level=level)
+    dwt, coeff_slices = pywt.coeffs_to_array(dec)
+
+    threshold = np.percentile(np.abs(dwt), percent) # compute the percentile(s) along a flattened version of the array.
+    lossy_dwt = pywt.threshold(dwt, threshold, mode='soft', substitute=0)
+    nwc = pywt.array_to_coeffs(lossy_dwt, coeff_slices, output_format='wavedec')
+    lossy_idwt = pywt.waverec(nwc, wavelet)
+
+    print ('non-zero elements: ', np.count_nonzero(lossy_dwt))
+    print('Compression ratio = ', round(np.count_nonzero(lossy_dwt) / len(lossy_dwt) * 100, 1), '%') # 100-percent,
+
+    plt.figure(figsize=(9,9))
+
+    plt.subplot(311)
+    plt.plot(x, 'gray')
+    plt.title('original signal')
+    plt.xticks([])
+    plt.yticks([])
+    
+    plt.subplot(312)
+    plt.plot(abs(lossy_dwt),'gray')
+    plt.title('lossy/sparse DWT')
+    plt.xticks([])
+    plt.yticks([])
+    
+    plt.subplot(313)
+    plt.plot(lossy_idwt, 'gray')
+    plt.title('recovered signal (IDWT)')
+    plt.xticks([])
+    plt.yticks([])
+
+    return lossy_idwt
 
 def play_wav(path):
     '''
