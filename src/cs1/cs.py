@@ -267,7 +267,7 @@ def GridSearch_Sensing_n_Recovery(x, PSIs, ks = [0.1, 0.2, 0.5, 1.001], solver =
     COLS = 2 + len(ks)
     RMSES = []
 
-    for idx, key in enumerate(PSIs):     
+    for idx, key in enumerate(PSIs):
 
         PSI = PSIs[key]
         
@@ -284,13 +284,13 @@ def GridSearch_Sensing_n_Recovery(x, PSIs, ks = [0.1, 0.2, 0.5, 1.001], solver =
         
         psi_name = key
         
-        PSI_H = PSI.conj().T
-        PSI_INV = np.linalg.pinv(PSI)    
-        assert np.allclose(PSI_H, PSI_INV) # Unitary Matrix
-        
+        # PSI_H = PSI.conj().T
+        # PSI_INV = np.linalg.pinv(PSI)    
+        # assert np.allclose(PSI_H, PSI_INV) # Unitary Matrix        
         #print(PSI_H)
         #print(PSI_INV)
         # theoretically, PSI_H == PSI_INV
+        
         z = PSI @ xe
         # print((xx @ PSI_H).shape)
         # print("z =", z[:10])

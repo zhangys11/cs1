@@ -151,7 +151,7 @@ def print_wavelet_families():
         print("%s family: " % family + ', '.join(pywt.wavelist(family)))
 
 
-def DwtMcCurve():
+def dwt_mc_curve():
     '''
     Plot the Mutual Coherence (MC) curve against dimensionality (N) for dwt
     '''
