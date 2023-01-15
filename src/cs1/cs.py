@@ -10,6 +10,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib import cm
 import pylab
+import pywt
 
 from sklearn.decomposition import PCA
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
@@ -207,7 +208,7 @@ def Sensing_n_Recovery(x, k = 0.2, t = 'DCT', solver = 'LASSO', \
 
     z,xr = Recovery (A, xs, t = t, solver = solver, L1=L1, display = False)
 
-    if display: 
+    if display:
 
         matplotlib.rcParams.update({'font.size': 20})
 

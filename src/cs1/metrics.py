@@ -152,10 +152,11 @@ def analyze_sparsity (x, PSIs, compute_mc = False):
             xx = np.zeros(PSI.shape[0])
             xx[:len(x)] = x        
         
-        PSI_H = PSI.conj().T
-        PSI_INV = np.linalg.pinv(PSI)
+        # PSI_H = PSI.conj().T
+        # PSI_INV = np.linalg.pinv(PSI)
         #print(PSI_H)
         #print(PSI_INV)
+
         # theoretically, PSI_H == PSI_INV
         z = PSI @ xx
         # print(z)
