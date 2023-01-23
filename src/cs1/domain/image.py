@@ -377,7 +377,7 @@ def dwt_lossy_image_compression(path, percent = 99, wavelet = 'db3', level = 3):
     
     plt.subplot(133)
     plt.imshow(lossy_idwt, 'gray')
-    plt.title('IDFT')
+    plt.title('IDWT')
     plt.xticks([])
     plt.yticks([])
 
