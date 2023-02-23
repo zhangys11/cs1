@@ -24,7 +24,7 @@ Compressed Sensing library for 1D (one-dimensional) Spectroscopic Profiling Data
         </tr>
         <tr>
             <td>cs1.basis.adaptive</td>
-            <td>adaptive CS transform bases, e.g., LDA (linear discriminant analysis)-based, EBP (eigenvector-based projection)[2]</td>
+            <td>adaptive CS transform bases, e.g., LDA (linear discriminant analysis)-based, EBP (eigenvector-based projection)[2], VAE (variational auto-encoder)</td>
         </tr>
         <tr>
             <td colspan = 2

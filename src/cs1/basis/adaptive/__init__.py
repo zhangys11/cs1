@@ -3,8 +3,8 @@ import matplotlib.pyplot as plt
 from numpy.linalg import inv, pinv, svd, norm
 from sklearn.linear_model import Lasso
 
-from .. import GetSensingMatrix
-from .common import *
+from ... import GetSensingMatrix
+from ..common import *
 
 def LDA(X, y, display = True):
     '''
