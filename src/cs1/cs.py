@@ -10,11 +10,10 @@ import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib import cm
 import pylab
-import pywt
 
 from sklearn.decomposition import PCA
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn.linear_model import Lasso, LassoCV, OrthogonalMatchingPursuit, OrthogonalMatchingPursuitCV
+from sklearn.linear_model import Lasso, LassoCV, OrthogonalMatchingPursuit
 from statsmodels.multivariate.manova import MANOVA
 
 if __package__:

@@ -13,8 +13,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torchvision import transforms
-from torch.autograd import Variable
 from torchvision.utils import make_grid
 from torchviz import make_dot
 
@@ -35,7 +33,7 @@ def build_vae(dataset_id = 'vintage_raman'):
     The trained weights are saved locally.
     '''
 
-    display(HTML('<h1>Load dataset</h1>'))
+    display(HTML('<h2>Load dataset</h2>'))
 
     if dataset_id == 'vintage_raman':
         X, y, X_names, desc, labels = io.load_dataset('vintage_526')
@@ -57,7 +55,8 @@ def build_vae(dataset_id = 'vintage_raman'):
         plt.show()
     '''
 
-    display(HTML('<h1>Train a LogisticRegressionCV on the dataset</h1>'))
+    display(HTML('<h2>Train a LogisticRegressionCV on the dataset</h2>'))
+    display(HTML('<p>We will use this model to evaluate the reconstructed data.</p>'))
 
     scaler = StandardScaler()  # MinMaxScaler() # StandardScaler()
     X = scaler.fit_transform(X)
@@ -65,7 +64,7 @@ def build_vae(dataset_id = 'vintage_raman'):
     clf = LogisticRegressionCV(cv=5).fit(X, y)
     print('LogisticRegressionCV score on entire dataset:', clf.score(X, y))
 
-    HTML('<h1>Train a VAE on the dataset</h1>')
+    HTML('<h2>Train VAE</h2>')
 
     n = X.shape[1]
     batch_size = 32
@@ -78,7 +77,7 @@ def build_vae(dataset_id = 'vintage_raman'):
                       h_dim1=h_dim1, h_dim2=h_dim2, z_dim=z_dim)
     torch.save(model.state_dict(), save_path)
 
-    display(HTML('<h2>Model 1 (two hidden layers) saved to: ' + save_path + '</h2>'))
+    display(HTML('<h3>Model 1 (two hidden layers) saved to: ' + save_path + '</h3>'))
 
     input_vec = torch.zeros(1, n, dtype=torch.float, requires_grad=False).to('cuda')
     out = model(input_vec)
@@ -93,13 +92,13 @@ def build_vae(dataset_id = 'vintage_raman'):
                       h_dim1=h_dim1, h_dim2=h_dim2, z_dim=z_dim)
     torch.save(model.state_dict(), save_path)
 
-    display(HTML('<h2>Model 2 (one hidden layers) saved to: ' + save_path + '</h2>'))
+    display(HTML('<h3>Model 2 (one hidden layers) saved to: ' + save_path + '</h3>'))
 
     input_vec = torch.zeros(1, n, dtype=torch.float, requires_grad=False).to('cuda')
     out = model(input_vec)
     display(make_dot(out))  # plot graph of variable, not of a nn.Module
 
-    display(HTML('<h1>Show some generated signals from VAE (use Model 2)</h1>'))
+    display(HTML('<h2>Show some generated signals from VAE (use Model 2)</h2>'))
 
     # peek generated signals
     with torch.no_grad():
@@ -117,7 +116,7 @@ def build_vae(dataset_id = 'vintage_raman'):
     model.load_state_dict(torch.load(save_path))
     model.to('cuda') # load to GPU
 
-    display(HTML('<h1>Run entire CS sensing and reconstruction process. One test sample per class.</h1>'))
+    display(HTML('<h2>Run entire CS sensing and reconstruction process. One test sample per class.</h2>'))
     display(HTML('<p>Use default hparams:<br/> ' + 'k = 0.01, PHI_flavor = gaussian, add_noise = True, lr = 0.01, regularization = 0.1, iterations = 1000, N = 10' +  '</p>'))
 
     labels = []
@@ -128,18 +127,15 @@ def build_vae(dataset_id = 'vintage_raman'):
             labels.append(label)
             signals.append(signal)
             
-    outputs = [vae_cs(model, torch.from_numpy(x).view(-1,1).cuda(), k = 0.01, 
-                            PHI_flavor = 'gaussian', 
-                            add_noise = True, 
-                            lr = 0.01, regularization = 0.1, 
-                            iterations = 1000, N = 10) 
+    outputs = [vae_cs(model, torch.from_numpy(x).view(-1,1).cuda(), k = 0.02, 
+                            PHI_flavor = 'bernoulli', 
+                            add_noise = False, 
+                            lr = 0.1, regularization = 0.1, 
+                            iterations = 400, N = 5)  # 0.02, 'bernoulli', True, 0.1, 0, 400, 3
                     for x in signals]
 
     outputs = scaler.inverse_transform( np.squeeze(np.array(outputs)) )
-
-    # signals = torch.stack(signals).numpy()
     signals = scaler.inverse_transform( np.squeeze(signals) )
-    # labels = torch.stack(labels).numpy()
 
     fig, ax = plt.subplots(2, nc, figsize=(1+nc*5,5))
     for j in range(nc):
@@ -253,16 +249,16 @@ def train_vae(X, y, batch_size=64, h_dim1=200, h_dim2=50, z_dim=10):
         vae_model.train()
         train_loss = 0
         for batch_idx, (data, _) in enumerate(train_loader):  # Generating batch
+
             data = data.float().cuda()
             optimizer.zero_grad()  # Telling Pytorch not to store gradients between backward passes
 
             recon_batch, mu, log_var = vae_model(data)  # Forward pass
-            loss = vae_loss_function(
-                recon_batch, data, mu, log_var)  # Computing loss
+            loss = vae_loss_function(recon_batch, data, mu, log_var)  # Computing loss
 
             loss.backward()  # Performing automatic differentiation w.r.t weights of the networks
             train_loss += loss.item()  # Updating loss value
-            optimizer.step()  # Performing parameters update using gradients computed with .backward()
+            optimizer.step()  # Perform parameters-update using gradients computed with .backward()
 
             if batch_idx % 100 == 0:
                 print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
