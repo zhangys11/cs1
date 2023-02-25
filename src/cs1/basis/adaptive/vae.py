@@ -5,7 +5,6 @@ import numpy as np
 from sklearn.linear_model import LogisticRegressionCV
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
-import cvxpy as cvx
 import matplotlib.pyplot as plt
 from IPython.display import HTML, display
 
@@ -15,8 +14,16 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torchvision.utils import make_grid
 from torchviz import make_dot
+from operator import itemgetter
 
 def plot_signals(X, scaler=None):
+    '''
+    Plot signals
+
+    Parameters
+    ----------
+    X : a batch of signals, shape (batch_size, n_features)
+    '''
     X = X.squeeze().cpu().numpy()
     if scaler is not None:
         X = scaler.inverse_transform(X)  # NOTE: remember to reverse scaling
@@ -26,8 +33,7 @@ def plot_signals(X, scaler=None):
         plt.axis('off')
         plt.show()
 
-
-def build_vae(dataset_id = 'vintage_raman'):
+def build_vae(dataset_id = 'vintage'):
     '''
     Build and train two vae models , one with 2 hidden layers, one with 1 hidden layer.
     The trained weights are saved locally.
@@ -35,25 +41,16 @@ def build_vae(dataset_id = 'vintage_raman'):
 
     display(HTML('<h2>Load dataset</h2>'))
 
-    if dataset_id == 'vintage_raman':
+    if dataset_id == 'vintage':
         X, y, X_names, desc, labels = io.load_dataset('vintage_526')
+    elif dataset_id == 'vintage2':
+        X, y, X_names, desc, labels = io.load_dataset('vintage_spi', y_subset=[0,3])
     else:
         X, y, X_names, labels = io.open_dataset(
          '7345X.5.csv', delimiter=',', has_y=True, labels=["5Y", "8Y", "16Y", "26Y"])
         #io.scatter_plot(X, y, labels = labels)
 
     nc = len(set(y)) # number of classes
-
-    '''
-    display(HTML('<h1>Randomly show 5 data from the dataset</h1>'))
-
-    # randomly peek 10 signals
-    for x in X[np.random.choice(range(len(y)), size=5, replace=False)]:
-        plt.figure(figsize=(5, 1))
-        plt.plot(x.T)
-        plt.axis('off')
-        plt.show()
-    '''
 
     display(HTML('<h2>Train a LogisticRegressionCV on the dataset</h2>'))
     display(HTML('<p>We will use this model to evaluate the reconstructed data.</p>'))
@@ -72,30 +69,30 @@ def build_vae(dataset_id = 'vintage_raman'):
     h_dim2 = 50
     z_dim = 10
 
-    save_path = 'vae_' + str([h_dim1, h_dim2, z_dim]) + '.pth'
-    model = train_vae(X, y, batch_size=batch_size,
+    save_path = dataset_id + '_vae_' + str([h_dim1, h_dim2, z_dim]) + '.pth'
+    model1 = train_vae(X, y, batch_size=batch_size,
                       h_dim1=h_dim1, h_dim2=h_dim2, z_dim=z_dim)
-    torch.save(model.state_dict(), save_path)
+    torch.save(model1.state_dict(), save_path)
 
     display(HTML('<h3>Model 1 (two hidden layers) saved to: ' + save_path + '</h3>'))
 
     input_vec = torch.zeros(1, n, dtype=torch.float, requires_grad=False).to('cuda')
-    out = model(input_vec)
+    out = model1(input_vec)
     display(make_dot(out))  # plot graph of variable, not of a nn.Module
 
     ########### MODEL 2 ############
 
     h_dim2 = 0
 
-    save_path = 'vae_' + str([h_dim1, h_dim2, z_dim]) + '.pth'
-    model = train_vae(X, y, batch_size=batch_size,
+    save_path = dataset_id + '_vae_' + str([h_dim1, h_dim2, z_dim]) + '.pth'
+    model2 = train_vae(X, y, batch_size=batch_size,
                       h_dim1=h_dim1, h_dim2=h_dim2, z_dim=z_dim)
-    torch.save(model.state_dict(), save_path)
+    torch.save(model2.state_dict(), save_path)
 
     display(HTML('<h3>Model 2 (one hidden layers) saved to: ' + save_path + '</h3>'))
 
     input_vec = torch.zeros(1, n, dtype=torch.float, requires_grad=False).to('cuda')
-    out = model(input_vec)
+    out = model2(input_vec)
     display(make_dot(out))  # plot graph of variable, not of a nn.Module
 
     display(HTML('<h2>Show some generated signals from VAE (use Model 2)</h2>'))
@@ -106,50 +103,21 @@ def build_vae(dataset_id = 'vintage_raman'):
         # Generating 64 random z in the representation space
         z = torch.randn(sample_size, z_dim).cuda()
         # Evaluating the decoder on each of them
-        sample = model.decoder(z).cuda()
+        sample = model2.decoder(z).cuda()
         plot_signals(make_grid(sample.view(sample_size, 1, n), padding=0),
                      scaler=scaler)  # Plotting the resulting signals
 
+    display(HTML('<h3>To reload model, use this code: </h3><pre>' + '''
+model = torchVAE(x_dim=n, h_dim1=h_dim1, h_dim2=h_dim2, z_dim=z_dim)
+model.load_state_dict(torch.load(save_path))
+model.to('cuda') # load to GPU
 
-    # display(HTML('<h1>Reload the VAE model</h1>'))
-    model = torchVAE(x_dim=n, h_dim1=h_dim1, h_dim2=h_dim2, z_dim=z_dim)
-    model.load_state_dict(torch.load(save_path))
-    model.to('cuda') # load to GPU
+# print model structure
+for layer in model.named_modules():
+    if 'fc' in layer[0]:
+        print(layer)''' + '</pre>'))
 
-    display(HTML('<h2>Run entire CS sensing and reconstruction process. One test sample per class.</h2>'))
-    display(HTML('<p>Use default hparams:<br/> ' + 'k = 0.01, PHI_flavor = gaussian, add_noise = True, lr = 0.01, regularization = 0.1, iterations = 1000, N = 10' +  '</p>'))
-
-    labels = []
-    signals = []
-
-    for (signal, label) in zip(X,y):
-        if label not in labels:
-            labels.append(label)
-            signals.append(signal)
-            
-    outputs = [vae_cs(model, torch.from_numpy(x).view(-1,1).cuda(), k = 0.02, 
-                            PHI_flavor = 'bernoulli', 
-                            add_noise = False, 
-                            lr = 0.1, regularization = 0.1, 
-                            iterations = 400, N = 5)  # 0.02, 'bernoulli', True, 0.1, 0, 400, 3
-                    for x in signals]
-
-    outputs = scaler.inverse_transform( np.squeeze(np.array(outputs)) )
-    signals = scaler.inverse_transform( np.squeeze(signals) )
-
-    fig, ax = plt.subplots(2, nc, figsize=(1+nc*5,5))
-    for j in range(nc):
-        ax[0,j].plot(signals[j])
-        ax[1,j].plot(outputs[j])
-        ax[1,j].set_title('label: ' + str(labels[j]) + '; predict: ' + str(clf.predict(scaler.transform([outputs[j]]))[0]))
-        ax[0,j].set_xticks([])
-        ax[0,j].set_yticks([])
-        ax[1,j].set_xticks([])
-        ax[1,j].set_yticks([])
-        
-    fig.suptitle('''Top: Original signal
-    Bottom: Reconstruction''', y = 1)
-    plt.show()
+    return X, y, scaler, clf, model1, model2
 
 class torchVAE(nn.Module):
     def __init__(self, x_dim, h_dim1, h_dim2, z_dim):
@@ -444,14 +412,20 @@ def VAE_Sensing_n_Recovery(model, x, scaler = None, k = 0.1,
         plt.show()
 
 
-def vae_cs_grid_search(model, X, y, 
-ks = [0.01, 0.05, 0.1, 0.3], 
-PHI_flavors = ['gaussian', 'bernoulli'], 
+def vae_cs_grid_search(model, X, y,
+ks = [0.01, 0.05, 0.1, 0.3],
+PHI_flavors = ['gaussian', 'bernoulli'],
 add_noises = [True, False],
 lrs = [0.001, 0.01, 0.1],
 regularizations = [0, 0.1, 1],
 iterationss = [500, 1000],
 Ns = [3, 10]):
+    
+    '''
+    Return
+    ------
+    sorted_dic : sorted result from the best to the worst
+    '''
     
     clf = LogisticRegressionCV(cv=5).fit(X, y)
     print('LogisticRegressionCV score on entire dataset:', clf.score(X, y))
@@ -487,4 +461,6 @@ Ns = [3, 10]):
                                     print('Acc improved from {} to {}. Update best hparams : {}'.format(best_acc, acc, best_hparams ))       
                                     best_acc = acc                             
 
-    return dic, best_hparams, best_acc
+
+    sorted_dic = dict(sorted(dic.items(), key=itemgetter(1), reverse = True))
+    return dic, best_hparams, best_acc, sorted_dic

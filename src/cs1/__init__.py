@@ -20,8 +20,8 @@ def GetSensingMatrix(n, k = 0.2, s = None, flavor = 'identity'):
     k : sampling ratio
     s : random seed. Specify a seed value for TVSM senarios.
     flavor : 
-        'identity' - use a scramble identity matrix. take its n*k rows as sensing matrix
-        'gaussian' - sampling from N(1, 1/n)
+        'identity' / 'bernoulli' - use a scramble identity matrix. take its n*k rows as sensing matrix
+        'gaussian' / 'normal' - sampling from N(1, 1/n)
     '''
     if s is not None:
         np.random.seed(s)

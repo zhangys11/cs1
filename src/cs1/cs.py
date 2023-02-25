@@ -1,19 +1,23 @@
 '''
 Contains CS basic operations and pipelines
 '''
-import os, sys
+import os
+import sys
+from tqdm import tqdm
 import numpy as np
 import pandas as pd
 import scipy
 import cv2
+import cvxpy
 import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib import cm
 import pylab
 
+from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn.linear_model import Lasso, LassoCV, OrthogonalMatchingPursuit
+from sklearn.linear_model import Lasso, LassoCV, LogisticRegressionCV, OrthogonalMatchingPursuit
 from statsmodels.multivariate.manova import MANOVA
 
 if __package__:
@@ -110,7 +114,7 @@ def Recovery (A, xs, t = 'DCT', PSI = None, solver = 'LASSO', L1 = 0.005, \
                       Now we use LassoCV. This param is no longer needed.
     t : IDM, DCT, DFT, etc.
     PSI : For adpative transforms, users need to pass in the PSI basis. For non-adaptive ones, leave as none.
-    solver : 'LASSO' or 'OMP' or 'VAE' (variational autoencoder, need a pretrained VAE model)
+    solver : 'LASSO' or 'OMP' or 'BP' or 'VAE' (variational autoencoder, need a pretrained VAE model)
     L1 : LASSO L1. specify a float or leave None for CV.
     '''
 
@@ -134,7 +138,7 @@ def Recovery (A, xs, t = 'DCT', PSI = None, solver = 'LASSO', L1 = 0.005, \
         lasso.fit(A, xs)
         z = lasso.coef_
 
-    else: # 'OMP'
+    elif solver == 'OMP':
 
         # plot the noise-free reconstruction
         omp = OrthogonalMatchingPursuit() # n_nonzero_coefs default 10%.
@@ -142,6 +146,16 @@ def Recovery (A, xs, t = 'DCT', PSI = None, solver = 'LASSO', L1 = 0.005, \
         z = omp.coef_
         # print('OMP score:', omp.score(A, xs)) # Return the coefficient of determination R^2 of the prediction.
     
+    elif solver == 'BP':
+        
+        n = A.shape[1]
+        z = cvxpy.Variable(n)
+        obj = cvxpy.Minimize(cvxpy.norm(z, 1))
+        const = [A @ z == xs]
+        prob = cvxpy.Problem(obj,const)
+        _ = prob.solve()       
+        z = z.value
+
     if t == PSI_NAMES[0] or t == PSI_LONGNAMES[0]:
         z = np.linalg.pinv(A) @ xs
         xr = z
@@ -166,7 +180,7 @@ def Recovery (A, xs, t = 'DCT', PSI = None, solver = 'LASSO', L1 = 0.005, \
         plt.figure(figsize = (10,3))
         # print ('non-zero coef: ', np.count_nonzero(z))
         # print ('sparsity: ', 1 - np.count_nonzero(z) / len(z) )
-        biggest_lasso_fs = (np.argsort(np.abs(z))[-200:-1])[::-1] # take last N item indices and reverse (ord desc)
+        _ = (np.argsort(np.abs(z))[-200:-1])[::-1] # take last N item indices and reverse (ord desc)
         plt.plot(np.abs(z))
         plt.title('abs (z)')
         plt.show()
@@ -190,7 +204,7 @@ def Sensing_n_Recovery(x, k = 0.2, t = 'DCT', solver = 'LASSO', \
         In normal cases (k<1), Az = xs has more unknowns than equations. For the extreme case of k = 1, CS sampling is degraded to a random shuffling. The linear system 'Az = xs' will have equal unknowns and equations, and there is only one solution. The reconstructed xr will be identical to the original x.
     '''
 
-    VECTORIZATION = False    
+    VECTORIZATION = False  
     if VECTORIZATION:
         PHI, OMEGA = GetSensingMatrix(len(x), k) 
         xs = PHI @ x
@@ -208,25 +222,7 @@ def Sensing_n_Recovery(x, k = 0.2, t = 'DCT', solver = 'LASSO', \
     z,xr = Recovery (A, xs, t = t, solver = solver, L1=L1, display = False)
 
     if display:
-
-        matplotlib.rcParams.update({'font.size': 20})
-
-        fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(32,6))
-
-        if np.any(np.iscomplex(z)):
-            ax[0].plot(np.abs(z), color='gray')
-        else:
-            ax[0].plot(z, color = 'gray')
-
-        ax[0].set_title('recovered latent representation (z)')
-
-        ax[1].plot(xr, color = 'gray')
-        ax[1].set_title('reconstructed signal (xr)')
-
-        fig.tight_layout()
-        plt.show()
-
-        matplotlib.rcParams.update({'font.size': 12})
+        plot_reconstructed(z, xr)
 
     return z, xr
 
@@ -611,3 +607,88 @@ def Dataset_Sensing_n_Recovery (X, y = None, k = 0.2, t = 'DCT', solver = 'LASSO
         print('KLD between the orignal and reconstructed signals ( y = ' + str(c) +  '): ', round(ukld,3))
     
     return Z, Xr
+
+
+def plot_reconstructed(z, xr):
+    '''
+    Plot the reconstructed latent representation z and the reconstructed signal xr
+    '''
+    matplotlib.rcParams.update({'font.size': 20})
+
+    fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(32,6))
+
+    if np.any(np.iscomplex(z)):
+        ax[0].plot(np.abs(z), color='gray')
+    else:
+        ax[0].plot(z, color = 'gray')
+    ax[0].set_title('recovered latent representation (z)')
+
+    ax[1].plot(xr, color = 'gray')
+    ax[1].set_title('reconstructed signal (xr)')
+
+    fig.tight_layout()
+    plt.show()
+
+    matplotlib.rcParams.update({'font.size': 12})
+
+def GridSearch_Dataset_Sensing_n_Recovery(X, y, 
+
+ts = ['IDM', 'DCT', 'DFT'], 
+ks = [0.01, 0.05, 0.1, 0.3], 
+solvers = ['LASSO', 'OMP', 'BP'],
+L1s = [0.1, 1, 10]):
+    '''
+    Grid search for best hparams for non-adaptive CS, using classification accuracy.
+
+    Parameters
+    ----------
+    ts : transform bases, e.g., DCT, DFT
+    solvers : LASSO, OMP, etc.
+    '''
+
+    if X.shape[1] % 2 == 1:
+        X = X[:,:-1] # make columns even. DCT requires even input.
+
+    scaler = StandardScaler()  # MinMaxScaler() # StandardScaler()
+    X = scaler.fit_transform(X)
+
+    clf = LogisticRegressionCV(cv=5).fit(X, y)
+    print('LogisticRegressionCV score on entire dataset:', clf.score(X, y))
+
+    dic = {}
+    best_acc = 0
+    best_hparams = ()
+
+    for k in ks:
+        for t in ts:
+            for solver in solvers:                
+                for L1 in (L1s if solver == 'LASSO' else [0]): # L1 is only used for LASSO solver
+
+                    hparam = (k, t, solver, L1)
+                    print('\nhyper-parameters: ', str(hparam))
+                    Xr = []
+                    Z = []
+                
+                    try:
+                        for i in tqdm(range(len(X))):
+
+                            x = X[i] # X[i,:].ravel().tolist()[0] # get the i-th sample
+
+                            z, xr = Sensing_n_Recovery(x, k = k, t=t, solver = solver, L1 = L1, display = False) # display = (i==0)
+                            Xr.append(xr)
+                            Z.append(z)
+
+                        acc = clf.score(np.array(Xr), y)
+                        dic[str(hparam)] = acc
+                        print("ACC = ", acc)
+
+                        if best_acc < acc:
+                            print('Update best hparams. Acc improved from {} to {}'.format(best_acc, acc))
+                            best_acc = acc
+                            plot_reconstructed(z, scaler.inverse_transform(xr.reshape(1,-1))[0] )
+                            best_hparams = hparam
+
+                    except Exception as e:
+                        print(str(hparam), e)
+
+    return dic, best_hparams, best_acc
