@@ -50,8 +50,6 @@ def build_vae(dataset_id = 'vintage'):
          '7345X.5.csv', delimiter=',', has_y=True, labels=["5Y", "8Y", "16Y", "26Y"])
         #io.scatter_plot(X, y, labels = labels)
 
-    nc = len(set(y)) # number of classes
-
     display(HTML('<h2>Train a LogisticRegressionCV on the dataset</h2>'))
     display(HTML('<p>We will use this model to evaluate the reconstructed data.</p>'))
 
