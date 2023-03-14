@@ -1,17 +1,19 @@
-# cs1
+# cs1 
 
 Compressed Sensing library for 1D (one-dimensional) Spectroscopic Profiling Data
 
 <table>
+    <thead>
+        <tr>
+            <th>package</th>
+            <th>module</th>
+            <th>sub-module</th>
+            <th>description</th>
+        </tr>
+    </thead>
     <tbody>
         <tr>
-            <td>package</td>
-            <td>module</td>
-            <td>sub-module</td>
-            <td>description</td>
-        </tr>
-        <tr>
-            <td rowspan=9>cs1</td>
+            <td rowspan=9>cs1<sup>[3]</sup></td>
         </tr>
         <tr>
             <td colspan = 2>cs1.cs</td>
@@ -20,11 +22,11 @@ Compressed Sensing library for 1D (one-dimensional) Spectroscopic Profiling Data
         <tr>
             <td rowspan = 2>cs1.basis</td>
             <td>cs1.basis.common</td>
-            <td>commonly used non-adaptive CS transform bases[1]</td>
+            <td>commonly used non-adaptive CS transform bases<sup>[1]</sup></td>
         </tr>
         <tr>
             <td>cs1.basis.adaptive</td>
-            <td>adaptive CS transform bases, e.g., LDA (linear discriminant analysis)-based, EBP (eigenvector-based projection)[2], VAE (variational auto-encoder)</td>
+            <td>adaptive CS transform bases, e.g., LDA (linear discriminant analysis)-based, EBP (eigenvector-based projection)<sup>[2]</sup>, VAE (variational auto-encoder)</td>
         </tr>
         <tr>
             <td colspan = 2
@@ -54,7 +56,8 @@ Compressed Sensing library for 1D (one-dimensional) Spectroscopic Profiling Data
 
 Publications:   
 [1] Adaptive compressed sensing of Raman spectroscopic profiling data for discriminative tasks [J]. Talanta, 2020, doi: 10.1016/j.talanta.2019.120681   
-[2]  Task-adaptive eigenvector-based projection (EBP) transform for compressed sensing: A case study of spectroscopic profiling sensor [J]. Analytical Science Advances. Chemistry Europe, 2021, doi: 10.1002/ansa.202100018
+[2]  Task-adaptive eigenvector-based projection (EBP) transform for compressed sensing: A case study of spectroscopic profiling sensor [J]. Analytical Science Advances. Chemistry Europe, 2021, doi: 10.1002/ansa.202100018  
+[3] Compressed Sensing library for spectroscopic profiling data [J]. Software Impacts, 2023, doi: 10.1016/j.simpa.2023.100492
 
 # Installation
 
