@@ -1,6 +1,5 @@
 from threading import Timer
 import webbrowser
-import sys
 import json
 import os
 
