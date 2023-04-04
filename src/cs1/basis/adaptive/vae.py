@@ -68,7 +68,7 @@ def build_vae(dataset_id = 'vintage'):
     z_dim = 10
 
     save_path = dataset_id + '_vae_' + str([h_dim1, h_dim2, z_dim]) + '.pth'
-    model1 = train_vae(X, y, batch_size=batch_size,
+    model1 = train_vae(X, batch_size=batch_size,
                       h_dim1=h_dim1, h_dim2=h_dim2, z_dim=z_dim)
     torch.save(model1.state_dict(), save_path)
 
@@ -83,7 +83,7 @@ def build_vae(dataset_id = 'vintage'):
     h_dim2 = 0
 
     save_path = dataset_id + '_vae_' + str([h_dim1, h_dim2, z_dim]) + '.pth'
-    model2 = train_vae(X, y, batch_size=batch_size,
+    model2 = train_vae(X, batch_size=batch_size,
                       h_dim1=h_dim1, h_dim2=h_dim2, z_dim=z_dim)
     torch.save(model2.state_dict(), save_path)
 
@@ -182,20 +182,20 @@ def vae_loss_function(recon_x, x, mu, log_var):
     return recon_error + KL
 
 
-def train_vae(X, y, batch_size=64, h_dim1=200, h_dim2=50, z_dim=10):
+def train_vae(X, batch_size=64, h_dim1=200, h_dim2=50, z_dim=10):
     '''
     h_dim2 : size of the 2nd hidden layer in the encoder. set to 0 to remove the layer.
     '''
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, shuffle=True)  # , random_state=0
+    X_train, X_test = train_test_split(
+        X, test_size=0.2, shuffle=True)  # , random_state=0
 
     n = X.shape[1]  # 3400
 
     train_dataset = torch.utils.data.TensorDataset(
-        torch.from_numpy(X_train), torch.from_numpy(y_train))
+        torch.from_numpy(X_train)) # , torch.from_numpy(y_train)
     test_dataset = torch.utils.data.TensorDataset(
-        torch.from_numpy(X_test), torch.from_numpy(y_test))
+        torch.from_numpy(X_test)) # , torch.from_numpy(y_test)
     train_loader = torch.utils.data.DataLoader(
         dataset=train_dataset, batch_size=batch_size, shuffle=True)
     test_loader = torch.utils.data.DataLoader(
@@ -214,9 +214,8 @@ def train_vae(X, y, batch_size=64, h_dim1=200, h_dim2=50, z_dim=10):
     for epoch in range(1, 30):
         vae_model.train()
         train_loss = 0
-        for batch_idx, (data, _) in enumerate(train_loader):  # Generating batch
-
-            data = data.float().cuda()
+        for batch_idx, (data) in enumerate(train_loader):  # Generating batch
+            data = data[0].float().cuda()
             optimizer.zero_grad()  # Telling Pytorch not to store gradients between backward passes
 
             recon_batch, mu, log_var = vae_model(data)  # Forward pass
@@ -238,8 +237,8 @@ def train_vae(X, y, batch_size=64, h_dim1=200, h_dim2=50, z_dim=10):
         vae_model.eval()
         test_loss = 0
         with torch.no_grad():
-            for data, _ in test_loader:
-                data = data.float().cuda()
+            for data in test_loader:
+                data = data[0].float().cuda()
                 recon, mu, log_var = vae_model(data)
 
                 # Adding batch loss to accumulator
