@@ -130,7 +130,7 @@ def Recovery (A, xs, t = 'DCT', PSI = None, solver = 'LASSO', L1 = 0.005, \
             alphas = [0.005, 0.0001, 0.00001] # set empirical alpha values. LDA needs smaller alpha
 
         if isinstance(L1, float):
-            lasso = Lasso(alpha=L1, tol = 0.0005)    
+            lasso = Lasso(alpha=L1, tol = 0.0005)
         else:
             lasso = LassoCV(alphas = alphas, selection = 'random', tol = 0.001, n_jobs=-1, verbose = verbose) # ‘random’ often leads to significantly faster convergence especially when tol is higher than 1e-4.
             # 实测并未发现 selction = cyclic / random 两种模式的运行时间差异
@@ -153,7 +153,7 @@ def Recovery (A, xs, t = 'DCT', PSI = None, solver = 'LASSO', L1 = 0.005, \
         obj = cvxpy.Minimize(cvxpy.norm(z, 1))
         const = [A @ z == xs]
         prob = cvxpy.Problem(obj,const)
-        _ = prob.solve()       
+        _ = prob.solve()  
         z = z.value
 
     if t == PSI_NAMES[0] or t == PSI_LONGNAMES[0]:
@@ -236,22 +236,25 @@ def GridSearch_Sensing_n_Recovery(x, PSIs, ks = [0.1, 0.2, 0.5, 1.001], solver =
     x : a single data sample (a vector) 
     '''
 
-    def DynamicProperty(RMSES, PSIs, ks, repeat = 1):
+    def DynamicProperty(MSES, RMSES, PSIs, ks):
 
-        assert (len(RMSES) == len(PSIs))
+        assert (len(RMSES) == len(PSIs) and len(MSES) == len(PSIs))
         matplotlib.rcParams.update({'font.size': 16})
         
-        for i, key in enumerate(PSIs):   
+        for metric_name, metric_value in zip(['MSE', 'RMSE'], [MSES, RMSES]):
+            # print(metric_name, metric_value)
+
+            for i, key in enumerate(PSIs):
+                    
+                plt.figure(figsize=(8,6))
                 
-            plt.figure(figsize=(8,6))
-            
-            plt.scatter(ks, RMSES[i], c='gray', s = 70, label = key)
-            plt.plot(ks, RMSES[i], c='gray')
-            plt.xlabel('k')
-            plt.ylabel('RMSE')
-            
-            plt.legend()
-            plt.show()
+                plt.scatter(ks, metric_value[i], c='gray', s = 70, label = key)
+                plt.plot(ks, metric_value[i], c='gray')
+                plt.xlabel(r'$k$')
+                plt.ylabel(metric_name)
+                plt.ticklabel_format(style='scientific', axis='y', scilimits=(-4,4), useMathText = True)
+                plt.legend()
+                plt.show()
 
         matplotlib.rcParams.update({'font.size': 12})
 
@@ -260,6 +263,7 @@ def GridSearch_Sensing_n_Recovery(x, PSIs, ks = [0.1, 0.2, 0.5, 1.001], solver =
     rows = len(PSIs) + 1
     matplotlib.rcParams.update({'font.size': 24})    
     COLS = 2 + len(ks)
+    MSES = []
     RMSES = []
 
     for idx, key in enumerate(PSIs):
@@ -334,6 +338,7 @@ def GridSearch_Sensing_n_Recovery(x, PSIs, ks = [0.1, 0.2, 0.5, 1.001], solver =
         plt.yticks([])
         # plt.axis('off')
         
+        mses = []
         rmses = []
         
         for kidx, k in enumerate(ks):
@@ -366,7 +371,8 @@ def GridSearch_Sensing_n_Recovery(x, PSIs, ks = [0.1, 0.2, 0.5, 1.001], solver =
 
             z, xr = Recovery (A, xs, psi_name, display = False, PSI = W, solver = solver) # lower k needs bigger L1. k 0.1 - L1 0.1, k 0.01, L1 - 10
             
-            _, _, rmse = calculate_recon_error(xe.reshape(1, -1), xr.reshape(1, -1)) #(np.matrix(xe), np.matrix(xr))        
+            mse, _, rmse = calculate_recon_error(xe.reshape(1, -1), xr.reshape(1, -1)) #(np.matrix(xe), np.matrix(xr))        
+            mses.append(mse)
             rmses.append(rmse)
             
             plt.subplot(rows,COLS,COLS*idx+2+1+kidx)
@@ -377,6 +383,7 @@ def GridSearch_Sensing_n_Recovery(x, PSIs, ks = [0.1, 0.2, 0.5, 1.001], solver =
             plt.yticks([])
             # plt.legend()
             
+        MSES.append(mses)
         RMSES.append(rmses)
         
         #plt.subplot(rows,3,3*idx+3)
@@ -391,8 +398,8 @@ def GridSearch_Sensing_n_Recovery(x, PSIs, ks = [0.1, 0.2, 0.5, 1.001], solver =
     matplotlib.rcParams.update({'font.size': 12})
 
     print('\n-------------\nThe following are dynamic properties of each PSI:')
-    DynamicProperty(RMSES, PSIs, np.round(ks,2))
-    return RMSES
+    DynamicProperty(MSES, RMSES, PSIs, np.round(ks,2))
+    return MSES, RMSES
 
 
 def Dataset_Sensing_n_Recovery (X, y = None, k = 0.2, t = 'DCT', solver = 'LASSO', L1 = 0.005, display = 'all'):

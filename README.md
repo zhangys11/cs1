@@ -82,7 +82,7 @@ Publications:
 <img src='sparsity_analysis.png'>
 
     # compare different bases and sampling ratio on a single sample
-    rmses = cs1.cs.GridSearch_Sensing_n_Recovery(x, PSIs, solver = 'LASSO') # returns relative MSEs
+    mses, rmses = cs1.cs.GridSearch_Sensing_n_Recovery(x, PSIs, solver = 'LASSO') # returns MSEs and relative MSEs
 
 <img src='grid_search.png'>
 
