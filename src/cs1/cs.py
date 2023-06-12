@@ -17,8 +17,9 @@ import pylab
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn.linear_model import Lasso, LassoCV, LogisticRegressionCV, OrthogonalMatchingPursuit
+from sklearn.linear_model import LinearRegression, Lasso, LassoCV, LogisticRegressionCV, OrthogonalMatchingPursuit
 from statsmodels.multivariate.manova import MANOVA
+from scipy.signal import savgol_filter
 
 if __package__:
     from . import GetSensingMatrix, SensingWithPHI, PSI_LONGNAMES, PSI_NAMES
@@ -615,6 +616,195 @@ def Dataset_Sensing_n_Recovery (X, y = None, k = 0.2, t = 'DCT', solver = 'LASSO
     
     return Z, Xr
 
+def preprocessed_singal_sensing_n_recovery(x, X, PSIs, ks = [0.01, 0.05,0.1,0.3,0.5,1]):
+    
+    '''
+    This function demonstrates the performance of CS recovery on different preprocessed signals, i.e., 1st derivative, 2nd derivative, scatter correction, and savagol smooth filter.
+    
+    Parameters
+    ----------
+    x : target signal 
+    X : the entire training set. Used only for scatter correction.
+    PSIs : a list of PSIs for comparison
+    ks : a list of sampling ratios for comparison
+
+    Examples:
+    ---------
+    selected_PSIs = {}
+    for key in ['DFT','DCT']: 
+        selected_PSIs[key] = PSIs[key]
+    _ = preprocessed_singal_sensing_n_recovery(X[0], X, selected_PSIs , ks = [0.01, 0.05,0.1,0.3,0.5,1])
+    '''
+    def D1(x):
+        return np.array([0] + list(np.diff(x)))
+    
+    # Second derivatives
+    def D2(x):        
+        return D1(D1(x))
+
+
+    # Scatter correction
+    def MSC(X):
+        '''
+        X : a batch of samples for training, not a single sample.
+        
+        Sample
+        ------
+        plt.plot(MSC(X)[0]) # display the 1st sample after MSC
+        '''
+        n, p = X.shape
+        Xmsc = np.ones((n, p))
+
+        # mu = x.mean()
+
+        for j in range(n):
+            mu = np.mean(X, axis=0)
+
+        for i in range(n):
+            y = X[i, :]
+            l = LinearRegression()
+            l.fit(mu.reshape(-1, 1), y.reshape(-1, 1))
+            k = l.coef_
+            b = l.intercept_
+            Xmsc[i, :] = (y - b) / k
+
+        return Xmsc
+    
+    
+    x1=D1(x)
+    x2=D2(x)
+    x3=savgol_filter(x, window_length=5, polyorder=3)    
+    x4=MSC(X)[0]
+        
+    for x, method in zip([x1,x2,x3,x4],['1st derivative','2nd derivative','smooth filtering','scatter correction']):
+        
+        # print(method)        
+    
+        plt.figure(figsize=(15 + len(ks)*5, len(PSIs)*7))
+        rows = len(PSIs) + 1
+        matplotlib.rcParams.update({'font.size': 24})    
+        COLS = 3 + len(ks)
+        MSES = []
+        RMSES = []
+
+        for idx, key in enumerate(PSIs):
+
+            PSI = PSIs[key]
+        
+            # padded version
+            xe = np.copy(x)
+        
+            # pad x with zero if necessary
+            if (len(x) < len(PSI)): # the HWT case
+                xe = np.zeros(len(PSI))
+                xe[:len(x)] = x     
+            if len(xe) % 2 == 1:
+                xe = xe[:-1] # xe = np.append(xe, 0) # make even length, as required by some transform, e.g., DCT
+                PSI = PSI[:-1,:-1] # align with xe
+        
+            psi_name = key
+        
+            z = PSI @ xe
+            
+            MAX = np.max(np.abs(z)) # abs(max(z, key=abs))
+            thresholds = np.array(range(100)) / 50000
+        
+            rs =[]
+            for threshold in thresholds:
+                rs.append((np.abs(np.array(z)) <= threshold * MAX).sum() / len(z))
+            
+            auc = 0
+            for i in range(1000):
+                auc += (np.abs(np.array(z)) <= (i+1)/1000 * MAX).sum() / len(z)        
+            auc = auc/1000
+        
+            r = (np.abs(np.array(z)) <= 0.001 * MAX).sum() / len(z)  #   # use 0.001 MAX ABS as threshold # sys.float_info.epsilon
+        
+        
+            ########## plot ###########    
+    
+            plt.subplot(rows,COLS,COLS*idx+1)  
+            plt.title(method)
+            plt.plot(x)
+            plt.xticks([])
+            plt.yticks([])  
+            
+            
+            plt.subplot(rows,COLS,COLS*idx+2)    
+            if PSI.dtype == 'complex': # DFT
+                plt.title('\n'+psi_name + ' basis(phase)')
+                plt.imshow(np.angle(PSI), interpolation='nearest', cmap=cm.Greys_r)
+            else:
+                plt.title('\n'+psi_name + ' basis')
+                plt.imshow(PSI, interpolation='nearest', cmap=cm.Greys_r)
+            plt.axis('off')
+            
+            
+            plt.subplot(rows,COLS,COLS*idx+3)
+
+            if np.any(np.iscomplex(z)):
+                plt.plot(np.abs(z), color='gray')
+            else:
+                plt.plot(z, color = 'gray')
+                
+            if idx == 0:
+                plt.title('z (latent space)') # '\n'+psi_name + 
+
+            plt.xticks([])
+            plt.yticks([])
+            # plt.axis('off')
+        
+            mses = []
+            rmses = []
+        
+            for kidx, k in enumerate(ks):
+        
+                ########## sensing #############
+
+                # either works fine
+                if True:
+                    PHI, OMEGA = cs.GetSensingMatrix(len(xe), k)            
+                    xs = PHI @ xe
+                    pidx = np.argmax(PHI, axis = 1)
+                else:
+                    xs, pidx = Sensing(xe, k)
+                    PHI = np.zeros((len(pidx), len(xe)))
+                    for i,j in enumerate(pidx):
+                        PHI[i, j] = 1
+
+                ####### reconstruction ##########
+            
+                A = MeasurementMatrix(len(xe), pidx, psi_name)
+                W = None
+                if (psi_name == 'HWT' or psi_name == 'DWT' or psi_name == 'ROM' or \
+                    psi_name == 'EBP' or psi_name == 'LDA'):
+                    W = PSI
+                    A = PHI @ W  
+
+                else:
+                    A = cs.MeasurementMatrix(len(xe), pidx, psi_name)
+                    W = None
+
+                z, xr = cs.Recovery (A, xs, psi_name, display = False, PSI = W, ) # lower k needs bigger L1. k 0.1 - L1 0.1, k 0.01, L1 - 10
+            
+                mse, _, rmse = cs.calculate_recon_error(xe.reshape(1, -1), xr.reshape(1, -1)) #(np.matrix(xe), np.matrix(xr))        
+                mses.append(mse)
+                rmses.append(rmse)
+            
+                plt.subplot(rows,COLS,COLS*idx+3+1+kidx)
+                plt.plot(xr[:len(x)]) #, label = 'RMSE ' + str( round(rmse, 3) ), color='gray') # cut the first n points, as in HWT, xr is padded.
+                if idx == 0:
+                    plt.title('$x_r$ ($k$=' + str(round(k, 2)) + ', $n_s$=' + str(len(xs)) + ')')
+                plt.xticks([])
+                plt.yticks([])                
+                # plt.legend()
+            
+            MSES.append(mses)
+            RMSES.append(rmses)
+            
+        plt.show()
+        
+    return MSES, RMSES
 
 def plot_reconstructed(z, xr):
     '''
