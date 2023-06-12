@@ -763,7 +763,7 @@ def preprocessed_singal_sensing_n_recovery(x, X, PSIs, ks = [0.01, 0.05,0.1,0.3,
 
                 # either works fine
                 if True:
-                    PHI, OMEGA = cs.GetSensingMatrix(len(xe), k)            
+                    PHI, OMEGA = GetSensingMatrix(len(xe), k)            
                     xs = PHI @ xe
                     pidx = np.argmax(PHI, axis = 1)
                 else:
@@ -782,12 +782,12 @@ def preprocessed_singal_sensing_n_recovery(x, X, PSIs, ks = [0.01, 0.05,0.1,0.3,
                     A = PHI @ W  
 
                 else:
-                    A = cs.MeasurementMatrix(len(xe), pidx, psi_name)
+                    A = MeasurementMatrix(len(xe), pidx, psi_name)
                     W = None
 
-                z, xr = cs.Recovery (A, xs, psi_name, display = False, PSI = W, ) # lower k needs bigger L1. k 0.1 - L1 0.1, k 0.01, L1 - 10
+                z, xr = Recovery (A, xs, psi_name, display = False, PSI = W, ) # lower k needs bigger L1. k 0.1 - L1 0.1, k 0.01, L1 - 10
             
-                mse, _, rmse = cs.calculate_recon_error(xe.reshape(1, -1), xr.reshape(1, -1)) #(np.matrix(xe), np.matrix(xr))        
+                mse, _, rmse = calculate_recon_error(xe.reshape(1, -1), xr.reshape(1, -1)) #(np.matrix(xe), np.matrix(xr))        
                 mses.append(mse)
                 rmses.append(rmse)
             
