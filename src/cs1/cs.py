@@ -675,14 +675,16 @@ def preprocessed_singal_sensing_n_recovery(x, X, PSIs, ks = [0.01, 0.05,0.1,0.3,
     x2=D2(x)
     x3=savgol_filter(x, window_length=5, polyorder=3)    
     x4=MSC(X)[0]
-        
+    
+    matplotlib.rcParams.update({'font.size': 24})  
+    
     for x, method in zip([x1,x2,x3,x4],['1st derivative','2nd derivative','smooth filtering','scatter correction']):
         
         # print(method)        
     
         plt.figure(figsize=(15 + len(ks)*5, len(PSIs)*7))
         rows = len(PSIs) + 1
-        matplotlib.rcParams.update({'font.size': 24})    
+          
         COLS = 3 + len(ks)
         MSES = []
         RMSES = []
@@ -803,7 +805,9 @@ def preprocessed_singal_sensing_n_recovery(x, X, PSIs, ks = [0.01, 0.05,0.1,0.3,
             RMSES.append(rmses)
             
         plt.show()
-        
+
+    matplotlib.rcParams.update({'font.size': 12}) # restore font size
+
     return MSES, RMSES
 
 def plot_reconstructed(z, xr):
