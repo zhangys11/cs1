@@ -36,7 +36,7 @@ Compressed Sensing library for 1D (one-dimensional) Spectroscopic Profiling Data
         <tr>
             <td>cs1.security</td>
             <td>cs1.security.tvsm</td>
-            <td>time-variant sensing matrix mechanism</td>
+            <td>time-variant sensing matrix mechanism<sup>[4]</sup></td>
         </tr>
         <tr>
             <td rowspan = 2>cs1.domain</td>
@@ -57,7 +57,8 @@ Compressed Sensing library for 1D (one-dimensional) Spectroscopic Profiling Data
 Publications:   
 [1] Adaptive compressed sensing of Raman spectroscopic profiling data for discriminative tasks [J]. Talanta, 2020, doi: 10.1016/j.talanta.2019.120681   
 [2]  Task-adaptive eigenvector-based projection (EBP) transform for compressed sensing: A case study of spectroscopic profiling sensor [J]. Analytical Science Advances. Chemistry Europe, 2021, doi: 10.1002/ansa.202100018  
-[3] Compressed Sensing library for spectroscopic profiling data [J]. Software Impacts, 2023, doi: 10.1016/j.simpa.2023.100492
+[3] Compressed Sensing library for spectroscopic profiling data [J]. Software Impacts, 2023, doi: 10.1016/j.simpa.2023.100492  
+[4] Secured telemetry based on time-variant sensing matrix – An empirical study of spectroscopic profiling, Smart Agricultural Technology, Volume 5, 2023, doi: 10.1016/j.atech.2023.100268
 
 # Installation
 
