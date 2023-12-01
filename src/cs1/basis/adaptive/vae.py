@@ -3,7 +3,7 @@ from tqdm import tqdm
 from qsi import io
 import numpy as np
 from sklearn.linear_model import LogisticRegressionCV
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 from IPython.display import HTML, display
@@ -33,10 +33,22 @@ def plot_signals(X, scaler=None):
         plt.axis('off')
         plt.show()
 
-def build_vae(dataset_id = 'vintage'):
+def build_vae(dataset_id = 'vintage', 
+    h_dim1 = 200,
+    h_dim2 = 0,
+    z_dim = 10,
+    loss = 'CE',
+    batch_size = 32,
+    epochs = 20):
     '''
     Build and train two vae models , one with 2 hidden layers, one with 1 hidden layer.
-    The trained weights are saved locally.
+    The trained weights are saved locally. 
+    Default loss function is CE (cross entropy, require rescaling signal to [0,1]). We found CE works better than MSE.  
+
+    Parameters
+    ----------
+    loss : CE - cross entropy
+           MSE - mean-squared error
     '''
 
     display(HTML('<h2>Load dataset</h2>'))
@@ -53,8 +65,15 @@ def build_vae(dataset_id = 'vintage'):
     display(HTML('<h2>Train a LogisticRegressionCV on the dataset</h2>'))
     display(HTML('<p>We will use this model to evaluate the reconstructed data.</p>'))
 
-    scaler = StandardScaler()  # MinMaxScaler() # StandardScaler()
-    X = scaler.fit_transform(X)
+    if loss == 'MSE':
+        scaler = StandardScaler()  # 
+    elif loss == 'CE':
+        scaler = MinMaxScaler() # Use MinMaxScaler if using CE loss.
+    else:
+        scaler = None
+
+    if scaler is not None:
+        X = scaler.fit_transform(X)
 
     clf = LogisticRegressionCV(cv=5).fit(X, y)
     print('LogisticRegressionCV score on entire dataset:', clf.score(X, y))
@@ -62,38 +81,18 @@ def build_vae(dataset_id = 'vintage'):
     HTML('<h2>Train VAE</h2>')
 
     n = X.shape[1]
-    batch_size = 32
-    h_dim1 = 200
-    h_dim2 = 50
-    z_dim = 10
-
+    
     save_path = dataset_id + '_vae_' + str([h_dim1, h_dim2, z_dim]) + '.pth'
     model1 = train_vae(X, batch_size=batch_size,
-                      h_dim1=h_dim1, h_dim2=h_dim2, z_dim=z_dim)
+                      h_dim1=h_dim1, h_dim2=h_dim2, z_dim=z_dim, loss=loss, epochs=epochs)
     torch.save(model1.state_dict(), save_path)
 
-    display(HTML('<h3>Model 1 (two hidden layers) saved to: ' + save_path + '</h3>'))
+    display(HTML('<h3>Model saved to: ' + save_path + '</h3>'))
 
     input_vec = torch.zeros(1, n, dtype=torch.float, requires_grad=False).to('cuda')
     out = model1(input_vec)
     display(make_dot(out))  # plot graph of variable, not of a nn.Module
-
-    ########### MODEL 2 ############
-
-    h_dim2 = 0
-
-    save_path = dataset_id + '_vae_' + str([h_dim1, h_dim2, z_dim]) + '.pth'
-    model2 = train_vae(X, batch_size=batch_size,
-                      h_dim1=h_dim1, h_dim2=h_dim2, z_dim=z_dim)
-    torch.save(model2.state_dict(), save_path)
-
-    display(HTML('<h3>Model 2 (one hidden layers) saved to: ' + save_path + '</h3>'))
-
-    input_vec = torch.zeros(1, n, dtype=torch.float, requires_grad=False).to('cuda')
-    out = model2(input_vec)
-    display(make_dot(out))  # plot graph of variable, not of a nn.Module
-
-    display(HTML('<h2>Show some generated signals from VAE (use Model 2)</h2>'))
+    display(HTML('<h2>Show some generated signals from VAE</h2>'))
 
     # peek generated signals
     with torch.no_grad():
@@ -101,7 +100,10 @@ def build_vae(dataset_id = 'vintage'):
         # Generating 64 random z in the representation space
         z = torch.randn(sample_size, z_dim).cuda()
         # Evaluating the decoder on each of them
-        sample = model2.decoder(z).cuda()
+        if torch.cuda.is_available():
+            sample = model1.decoder(z).cuda()
+        else:
+            sample = model1.decoder(z).cpu()
         plot_signals(make_grid(sample.view(sample_size, 1, n), padding=0),
                      scaler=scaler)  # Plotting the resulting signals
 
@@ -115,7 +117,7 @@ for layer in model.named_modules():
     if 'fc' in layer[0]:
         print(layer)''' + '</pre>'))
 
-    return X, y, scaler, clf, model1, model2
+    return X, y, scaler, clf, model1
 
 class torchVAE(nn.Module):
     def __init__(self, x_dim, h_dim1, h_dim2, z_dim):
@@ -172,17 +174,19 @@ class torchVAE(nn.Module):
         return self.decoder(z), mu, log_var
 
 
-def vae_loss_function(recon_x, x, mu, log_var):
+def vae_loss_function(recon_x, x, mu, log_var, loss = 'CE'):
     '''
     define loss as reconstruction error + KL divergence 
-    '''
-    recon_error = F.binary_cross_entropy(
-        recon_x, x.view(-1, recon_x.size(1)), reduction='sum')
+    '''    
+    if loss == 'CE':
+        recon_error = F.mse_loss(recon_x, x, reduction='sum') 
+    else:
+        recon_error = F.binary_cross_entropy(recon_x, x, reduction='sum') # CE require inputs to be within [0,1]
     KL = 0.5 * torch.sum(log_var.exp() - log_var + mu.pow(2) - 1)
     return recon_error + KL
 
 
-def train_vae(X, batch_size=64, h_dim1=200, h_dim2=50, z_dim=10):
+def train_vae(X, batch_size=64, h_dim1=200, h_dim2=50, z_dim=10, loss='CE', epochs=20):
     '''
     h_dim2 : size of the 2nd hidden layer in the encoder. set to 0 to remove the layer.
     '''
@@ -206,64 +210,87 @@ def train_vae(X, batch_size=64, h_dim1=200, h_dim2=50, z_dim=10):
 
     vae_model = torchVAE(x_dim=n, h_dim1=h_dim1, h_dim2=h_dim2, z_dim=z_dim)
     if torch.cuda.is_available():
-        vae_model.cuda()
-
-    optimizer = optim.Adam(vae_model.parameters())
+       vae_model.cuda()
+    
+    train_losses = []
+    test_losses = []
+    optimizer = optim.Adam(vae_model.parameters(), weight_decay = 0.1)
 
     # Training the VAE for N epochs
-    for epoch in range(1, 30):
+    for epoch in range(1, epochs + 1):
         vae_model.train()
         train_loss = 0
         for batch_idx, (data) in enumerate(train_loader):  # Generating batch
-            data = data[0].float().cuda()
+            if torch.cuda.is_available():
+               data = data[0].float().cuda()
+            else:
+               data = data[0].float().cpu()
+            
             optimizer.zero_grad()  # Telling Pytorch not to store gradients between backward passes
 
             recon_batch, mu, log_var = vae_model(data)  # Forward pass
-            loss = vae_loss_function(recon_batch, data, mu, log_var)  # Computing loss
+            loss_value = vae_loss_function(recon_batch, data, mu, log_var, loss)  # Computing loss
 
-            loss.backward()  # Performing automatic differentiation w.r.t weights of the networks
-            train_loss += loss.item()  # Updating loss value
+            loss_value.backward()  # Performing automatic differentiation w.r.t weights of the networks
+            train_loss += loss_value.item()  # Updating loss value
             optimizer.step()  # Perform parameters-update using gradients computed with .backward()
 
             if batch_idx % 100 == 0:
                 print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                     epoch, batch_idx * len(data), len(train_loader.dataset),
-                    100. * batch_idx / len(train_loader), loss.item() / len(data)))
+                    100. * batch_idx / len(train_loader), loss_value.item() / len(data)))
 
-        print('====> Epoch: {} Average loss: {:.4f}'.format(
+        print('====> Epoch: {} Training set loss: {:.4f}'.format(
             epoch, train_loss / len(train_loader.dataset)))
+        train_losses.append(train_loss / len(train_loader.dataset))
 
         # Testing the VAE
         vae_model.eval()
         test_loss = 0
         with torch.no_grad():
             for data in test_loader:
-                data = data[0].float().cuda()
+                if torch.cuda.is_available():
+                   data = data[0].float().cuda()
+                else:
+                   data = data[0].float().cpu()
+                
                 recon, mu, log_var = vae_model(data)
 
                 # Adding batch loss to accumulator
-                test_loss += vae_loss_function(recon, data, mu, log_var).item()
+                test_loss += vae_loss_function(recon, data, mu, log_var, loss).item()
 
         # Normalizing with number of samples in the test set
         test_loss /= len(test_loader.dataset)
-        print('====> Test set loss: {:.4f}'.format(test_loss))
+        print('====> Validation set loss: {:.4f}'.format(test_loss))
+        test_losses.append(test_loss)
+
+    plt.figure(figsize=(5,3))
+    # print(train_losses)
+    # print(test_losses)
+    plt.plot(range(1, epochs + 1), train_losses, label = 'train loss')
+    plt.plot(range(1, epochs + 1), test_losses, label = 'val loss')
+    plt.gca().xaxis.set_major_locator(plt.MaxNLocator(integer=True))
+    plt.title('VAE Loss (MSE + KLD) ~ Iterations')
+    plt.legend()
+    plt.show()
 
     return vae_model
 
 
-def vae_reconstruct(model, PHI, xs, lr = 0.01, regularization = 0.1, iterations = 1000, N = 10, debug_mode = False):
+def vae_reconstruct(model, PHI, xs, lr = 0.01, iterations = 1000, N = 1, debug_mode = False):
     '''
-    Reconstruct 1D signal using VAE
+    Reconstruct 1D signal using VAE.
+    This function uses GD to minimize the reconstruction error loss function.
+    It returns the best z that minimize the loss.
     
     Parameters
     ----------
     model : a pretrained VAE model  
     PHI : sensing matrix
     xs : sampled signal
-    reg : set None or 0 to disable regularization  
     lr : learning rate  
-    iterations : iterations for gradient descent
-    N : due to randomness, we can perform N runs and get the best.
+    iterations : iterations for gradient descent. The objective function is signal MSE.  
+    N : due to generative model's randomness, we can perform N runs and get the best.
     '''
     
     z_dim = 10    
@@ -276,7 +303,12 @@ def vae_reconstruct(model, PHI, xs, lr = 0.01, regularization = 0.1, iterations 
     z_best.requires_grad_(False)
     
     for _ in range(N):  # Performing 10 random restarts, i.e. repeat for 10 initial random z's
-        z = torch.randn(1, z_dim).cuda()
+        
+        if torch.cuda.is_available():
+            z = torch.randn(1, z_dim).cuda()
+        else:
+            z = torch.randn(1, z_dim).cpu()
+        
         z.requires_grad_(True)
         
         optimizer = optim.Adam([z], lr = lr)
@@ -284,11 +316,12 @@ def vae_reconstruct(model, PHI, xs, lr = 0.01, regularization = 0.1, iterations 
         for _ in range(iterations):  # Performing iter gradient steps
             xsr = torch.mm(PHI, model.decoder(z).view(-1,1).cuda())  # xsr = PHI * Xr, i.e., reconstructed sampled signal, it should be close to xs
             
-            if regularization is not None:
-                loss = torch.pow(torch.norm(xsr - xs), 2) + regularization * torch.pow(torch.norm(z),2) # 正则化，抑制z向量
-            else:
-                loss = torch.pow(torch.norm(xsr - xs), 2)
-                
+            #if regularization is not None:
+            #    loss = torch.pow(torch.norm(xsr - xs), 2) + regularization * torch.pow(torch.norm(z),2) # 正则化，抑制z向量
+            #else:
+            #    loss = torch.pow(torch.norm(xsr - xs), 2)
+
+            loss = torch.pow(torch.norm(xsr - xs), 2)                
             losses.append(loss.item()) # Storing loss history to determine best iterations
 
             optimizer.zero_grad()
@@ -297,8 +330,8 @@ def vae_reconstruct(model, PHI, xs, lr = 0.01, regularization = 0.1, iterations 
 
         if debug_mode:
             plt.figure(figsize=(5,2))
-            plt.plot(range(iterations), losses)
-            plt.title('Loss ~ Iterations')
+            plt.plot(range(1, iterations + 1), losses)
+            plt.title('Signal MSE ~ GD Iterations')
             plt.show()
 
         sample = model.decoder(z).cuda()
@@ -308,7 +341,7 @@ def vae_reconstruct(model, PHI, xs, lr = 0.01, regularization = 0.1, iterations 
     
     return z_best
 
-def vae_cs(model, x, k = 0.1, PHI_flavor = 'gaussian', add_noise = True, lr = 0.01, regularization = 0.1, iterations = 1000, N = 10, debug_mode = False):
+def vae_cs(model, x, k = 0.1, PHI_flavor = 'gaussian', add_noise = True, lr = 0.01, iterations = 1000, N = 10, debug_mode = False):
     '''
     Compressed sensing using VAE
 
@@ -360,10 +393,11 @@ def vae_cs(model, x, k = 0.1, PHI_flavor = 'gaussian', add_noise = True, lr = 0.
     else:
         xs = torch.mm(PHI, x)
         
-    xs.cuda()
+    if torch.cuda.is_available():
+        xs.cuda()
     xs.requires_grad_(False)
     
-    z = vae_reconstruct(model, PHI, xs, lr = lr, regularization = regularization, iterations = iterations, N = N, debug_mode=debug_mode) # 依据Xs求解z
+    z = vae_reconstruct(model, PHI, xs, lr = lr, iterations = iterations, N = N, debug_mode=debug_mode) # 依据Xs求解z
     xr = model.decoder(z).view(n,1).detach().cpu().numpy() # 利用decoder获取xr
     return xr
 
@@ -371,7 +405,7 @@ def vae_cs(model, x, k = 0.1, PHI_flavor = 'gaussian', add_noise = True, lr = 0.
 def VAE_Sensing_n_Recovery(model, x, scaler = None, k = 0.1,
                             PHI_flavor = 'gaussian', 
                             add_noise = True, 
-                            lr = 0.01, regularization = 0.1, 
+                            lr = 0.01, 
                             iterations = 1000, N = 10, show_plot = True, debug_mode = False):
     '''
     VAE sensing and recovery for one signal sample.
@@ -389,7 +423,7 @@ def VAE_Sensing_n_Recovery(model, x, scaler = None, k = 0.1,
     xr = vae_cs(model, torch.from_numpy(x).view(-1,1).cuda(), k = k, 
                             PHI_flavor = PHI_flavor, 
                             add_noise = add_noise, 
-                            lr = lr, regularization = regularization, 
+                            lr = lr, 
                             iterations = iterations, N = N, debug_mode=debug_mode)
 
     # print(xr.shape, x.shape)
@@ -410,13 +444,12 @@ def VAE_Sensing_n_Recovery(model, x, scaler = None, k = 0.1,
 
 
 def vae_cs_grid_search(model, X, y,
-ks = [0.01, 0.05, 0.1, 0.3],
-PHI_flavors = ['gaussian', 'bernoulli'],
-add_noises = [True, False],
-lrs = [0.001, 0.01, 0.1],
-regularizations = [0, 0.1, 1],
-iterationss = [500, 1000],
-Ns = [3, 10]):
+    ks = [0.01, 0.05, 0.1, 0.3],
+    PHI_flavors = ['gaussian', 'bernoulli'],
+    add_noises = [True, False],
+    lrs = [0.001, 0.01, 0.1],
+    iterationss = [500, 1000],
+    Ns = [3, 10]):
     
     '''
     Return
@@ -435,28 +468,25 @@ Ns = [3, 10]):
         for PHI_flavor in PHI_flavors:
             for add_noise in add_noises:
                 for lr in lrs:
-                    for regularization in regularizations:
-                        for iterations in iterationss:
-                            for N in Ns:
+                    for iterations in iterationss:
+                        for N in Ns:
+                            print('\nGrid Search Loop:', k, PHI_flavor, add_noise, lr, iterations, N)
 
-                                print('\nGrid Search Loop:', k, PHI_flavor, add_noise, lr, regularization, iterations, N)
+                            Xr = [vae_cs(model, torch.from_numpy(x).view(-1,1).cuda(), k = k, 
+                                                    PHI_flavor = PHI_flavor, 
+                                                    add_noise = add_noise, 
+                                                    lr = lr, 
+                                                    iterations = iterations, N = N) 
+                                            for x in tqdm(X)]
 
-
-                                Xr = [vae_cs(model, torch.from_numpy(x).view(-1,1).cuda(), k = k, 
-                                                        PHI_flavor = PHI_flavor, 
-                                                        add_noise = add_noise, 
-                                                        lr = lr, regularization = regularization, 
-                                                        iterations = iterations, N = N) 
-                                                for x in tqdm(X)]
-
-                                Xr = np.squeeze(Xr)
-                                acc = clf.score(Xr, y)
-                                print('Acc:', acc)
-                                dic[(k, PHI_flavor, add_noise, lr, regularization, iterations, N)] = acc
-                                if best_acc < acc:                                    
-                                    best_hparams = (k, PHI_flavor, add_noise, lr, regularization, iterations, N)
-                                    print('Acc improved from {} to {}. Update best hparams : {}'.format(best_acc, acc, best_hparams ))       
-                                    best_acc = acc                             
+                            Xr = np.squeeze(Xr)
+                            acc = clf.score(Xr, y)
+                            print('Acc:', acc)
+                            dic[(k, PHI_flavor, add_noise, lr, iterations, N)] = acc
+                            if best_acc < acc:                                    
+                                best_hparams = (k, PHI_flavor, add_noise, lr, iterations, N)
+                                print('Acc improved from {} to {}. Update best hparams : {}'.format(best_acc, acc, best_hparams ))       
+                                best_acc = acc                             
 
 
     sorted_dic = dict(sorted(dic.items(), key=itemgetter(1), reverse = True))

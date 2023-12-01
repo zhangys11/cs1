@@ -8,3 +8,6 @@ notebooks/*.pkl
 notebooks/mnist_data/
 notebooks/sample_.png
 notebooks/tmp.csv
+notebooks/Compressed Sensing - VAE - Vintage run2.ipynb
+notebooks/Compressed Sensing - VAE - Vintage II.ipynb
+notebooks/Compressed Sensing - VAE - Vintage full.ipynb
