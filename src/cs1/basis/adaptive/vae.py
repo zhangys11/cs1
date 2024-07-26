@@ -270,7 +270,7 @@ def train_vae(X, batch_size=64, h_dim1=200, h_dim2=50, z_dim=10, loss='CE', epoc
     plt.plot(range(1, epochs + 1), train_losses, label = 'train loss')
     plt.plot(range(1, epochs + 1), test_losses, label = 'val loss')
     plt.gca().xaxis.set_major_locator(plt.MaxNLocator(integer=True))
-    plt.title('VAE Loss (MSE + KLD) ~ Iterations')
+    plt.title('VAE Loss (MSE + KLD) ~ epochs')
     plt.legend()
     plt.show()
 
