@@ -186,7 +186,7 @@ def vae_loss_function(recon_x, x, mu, log_var, loss = 'CE'):
     return recon_error + KL
 
 
-def train_vae(X, batch_size=64, h_dim1=200, h_dim2=50, z_dim=10, loss='CE', epochs=20):
+def train_vae(X, batch_size=64, h_dim1=200, h_dim2=50, z_dim=10, loss='CE', epochs=20, verbose=True):
     '''
     h_dim2 : size of the 2nd hidden layer in the encoder. set to 0 to remove the layer.
     '''
@@ -235,13 +235,14 @@ def train_vae(X, batch_size=64, h_dim1=200, h_dim2=50, z_dim=10, loss='CE', epoc
             train_loss += loss_value.item()  # Updating loss value
             optimizer.step()  # Perform parameters-update using gradients computed with .backward()
 
-            if batch_idx % 100 == 0:
+            if verbose and batch_idx % 100 == 0:
                 print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                     epoch, batch_idx * len(data), len(train_loader.dataset),
                     100. * batch_idx / len(train_loader), loss_value.item() / len(data)))
 
-        print('====> Epoch: {} Training set loss: {:.4f}'.format(
-            epoch, train_loss / len(train_loader.dataset)))
+        if verbose:
+            print('====> Epoch: {} Training set loss: {:.4f}'.format(
+                epoch, train_loss / len(train_loader.dataset)))
         train_losses.append(train_loss / len(train_loader.dataset))
 
         # Testing the VAE
@@ -261,18 +262,20 @@ def train_vae(X, batch_size=64, h_dim1=200, h_dim2=50, z_dim=10, loss='CE', epoc
 
         # Normalizing with number of samples in the test set
         test_loss /= len(test_loader.dataset)
-        print('====> Validation set loss: {:.4f}'.format(test_loss))
+        if verbose:
+            print('====> Validation set loss: {:.4f}'.format(test_loss))
         test_losses.append(test_loss)
 
-    plt.figure(figsize=(5,3))
-    # print(train_losses)
-    # print(test_losses)
-    plt.plot(range(1, epochs + 1), train_losses, label = 'train loss')
-    plt.plot(range(1, epochs + 1), test_losses, label = 'val loss')
-    plt.gca().xaxis.set_major_locator(plt.MaxNLocator(integer=True))
-    plt.title('VAE Loss (MSE + KLD) ~ epochs')
-    plt.legend()
-    plt.show()
+    if verbose:
+        plt.figure(figsize=(5,3))
+        # print(train_losses)
+        # print(test_losses)
+        plt.plot(range(1, epochs + 1), train_losses, label = 'train loss')
+        plt.plot(range(1, epochs + 1), test_losses, label = 'val loss')
+        plt.gca().xaxis.set_major_locator(plt.MaxNLocator(integer=True))
+        plt.title('VAE Loss (MSE + KLD) ~ epochs')
+        plt.legend()
+        plt.show()
 
     return vae_model
 
